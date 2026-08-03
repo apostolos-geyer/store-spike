@@ -23,7 +23,7 @@
  * This is the routine that makes the absence of a dead-letter queue safe: it
  * recovers a captured charge whether or not the event was ever delivered.
  */
-import { and, eq, isNotNull, isNull, lt } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, lt } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import { Database, query, type DbStatement } from "../Services/Database.ts";
@@ -34,11 +34,33 @@ import { customerOrder, orderItem } from "./Schema.ts";
 /** How long an order may hold stock with no session before it is presumed abandoned. */
 export const ORPHAN_GRACE_MS = 15 * 60_000;
 
+/**
+ * How many orders one sweep will touch, per category.
+ *
+ * UNBOUNDED WAS A LIVENESS BUG, not merely a slow one. Each stale order costs a
+ * provider round trip plus its own writes, and the sweep runs inside a cron
+ * invocation with a wall-clock budget. A backlog large enough to exhaust that
+ * budget gets killed partway — and because the query is ordered the same way
+ * every time, the next run starts on the same rows and dies in the same place.
+ * The tail is never reached, and nothing reports that it was not.
+ *
+ * With a bound, each run finishes and makes progress, and `remaining` says
+ * whether to expect more. Quarter-hourly at this size drains any realistic
+ * backlog within a few runs.
+ */
+export const SWEEP_LIMIT = 100;
+
 export interface SweepResult {
   readonly orphansReleased: number;
   readonly healed: number;
   readonly released: number;
   readonly inconclusive: number;
+  /**
+   * This run hit {@link SWEEP_LIMIT}. A truncated sweep is indistinguishable
+   * from a finished one unless it says so, and silently dropping the tail is how
+   * held stock stays held.
+   */
+  readonly remaining: boolean;
 }
 
 export const sweep = Effect.fn("Reconcile.sweep")(function* (): Effect.fn.Return<
@@ -89,7 +111,11 @@ export const sweep = Effect.fn("Reconcile.sweep")(function* (): Effect.fn.Return
           eq(customerOrder.status, "pending"),
           lt(customerOrder.createdAt, now - ORPHAN_GRACE_MS),
         ),
-      ),
+      )
+      // Oldest first, so a backlog drains in the order it accumulated rather
+      // than starving whatever happens to sort last.
+      .orderBy(asc(customerOrder.createdAt))
+      .limit(SWEEP_LIMIT),
   );
 
   let orphansReleased = 0;
@@ -110,7 +136,10 @@ export const sweep = Effect.fn("Reconcile.sweep")(function* (): Effect.fn.Return
           eq(customerOrder.paymentStatus, "unpaid"),
           lt(customerOrder.sessionExpiresAt, now),
         ),
-      ),
+      )
+      // Oldest expiry first: the longest-held stock is released soonest.
+      .orderBy(asc(customerOrder.sessionExpiresAt))
+      .limit(SWEEP_LIMIT),
   );
 
   let healed = 0;
@@ -176,5 +205,13 @@ export const sweep = Effect.fn("Reconcile.sweep")(function* (): Effect.fn.Return
     released += 1;
   }
 
-  return { orphansReleased, healed, released, inconclusive };
+  /**
+   * Whether this run hit its bound. A sweep that is silently truncated looks
+   * identical to one with nothing left to do, so it says which it was — the
+   * cron logs it, and a persistent `true` means the backlog is growing faster
+   * than quarter-hourly runs drain it.
+   */
+  const remaining = orphans.length === SWEEP_LIMIT || stale.length === SWEEP_LIMIT;
+
+  return { orphansReleased, healed, released, inconclusive, remaining };
 });

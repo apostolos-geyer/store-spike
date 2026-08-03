@@ -324,6 +324,36 @@ The cart is now bounded at 20 lines in `Storefront.rpc.ts` for the same reason:
 pricing issues an `inArray` over distinct variants, so an unbounded cart was a 500
 any anonymous caller could trigger by posting a long enough list.
 
+### X2. Three hot lookups had no index; the sweep was unbounded — **FIXED**
+
+**HIGH** · `src/Domain/Schema.ts`, `src/Domain/Reconcile.ts` · lens `follow-up`
+
+Prompted by asking whether the `inArray` was an isolated mistake. It was the only
+O(N)-parameter query, but the index audit found three full scans on paths that
+grow forever:
+
+- `customer_order.payment_intent_id` — the ONLY join a refund or dispute has, and
+  it scanned every order the store had ever taken.
+- `payment_event.order_id` — the order timeline scanned every provider event ever
+  received. Append-only, never pruned, so it degrades daily.
+- `store_operator_event.(target_type, target_id)` — the same read scanning the
+  fastest-growing table in the store.
+
+`idx_order_status` was also replaced with `idx_order_sweep(status, payment_status,
+session_expires_at)`: status alone is not selective on a table that is mostly
+pending and then mostly paid.
+
+Separately, the sweep had NO LIMIT, which is a liveness bug rather than a slow
+one. Each stale order costs a provider round trip plus its own writes, and the
+cron has a wall-clock budget; a backlog big enough to exhaust it gets killed
+partway, and because the ordering is stable the next run dies on the same rows.
+The tail is never reached and nothing says so. Now bounded at 100 per category,
+oldest first, with `remaining` reporting truncation.
+
+STILL TRUE, and accepted: the sweep is N+1 by nature — one provider `retrieve` per
+stale session, because only the provider can say whether a session was paid. The
+bound is what makes that safe rather than batching.
+
 ## Refuted — do not re-raise without new evidence
 
 ### R1. publishProduct freezes every image role into a release, so `evidence` images are published publicly

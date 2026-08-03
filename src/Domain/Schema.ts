@@ -402,8 +402,23 @@ export const customerOrder = sqliteTable(
   },
   (t) => [
     index("idx_order_user").on(t.userId, t.createdAt),
-    index("idx_order_status").on(t.status),
     index("idx_order_created").on(t.createdAt),
+    /**
+     * THE SWEEP'S OWN PREDICATE, composite and in its filter order.
+     *
+     * `sweep` selects `status = 'pending' AND payment_status = 'unpaid' AND
+     * session_expires_at < ?`. An index on `status` alone is nearly useless
+     * here — pending is not selective on a table that is mostly pending until it
+     * is mostly paid — and this runs on a cron over the whole order book.
+     */
+    index("idx_order_sweep").on(t.status, t.paymentStatus, t.sessionExpiresAt),
+    /**
+     * THE REFUND JOIN. A charge event carries no session and no metadata, so
+     * `settle` resolves it by payment intent — and without this that lookup is a
+     * full scan of every order the store has ever taken, on the path where money
+     * is going back.
+     */
+    index("idx_order_payment_intent").on(t.paymentIntentId),
     check(
       "ship_address_atomic",
       sql`(ship_name IS NULL) = (ship_line1 IS NULL) AND (ship_name IS NULL) = (ship_city IS NULL) AND (ship_name IS NULL) = (ship_region IS NULL) AND (ship_name IS NULL) = (ship_postal IS NULL)`,
@@ -458,7 +473,9 @@ export const orderItem = sqliteTable(
  * outlives any queue retention window. No operator method touches this table,
  * and no catalog delete may either.
  */
-export const paymentEvent = sqliteTable("payment_event", {
+export const paymentEvent = sqliteTable(
+  "payment_event",
+  {
   eventId: text("event_id").primaryKey(),
   eventType: text("event_type").notNull(),
   sessionId: text("session_id"),
@@ -467,7 +484,14 @@ export const paymentEvent = sqliteTable("payment_event", {
   attempts: integer("attempts"),
   payload: text("payload"),
   createdAt: integer("created_at").notNull(),
-});
+  },
+  /**
+   * The order timeline reads this by order id, and this table is append-only and
+   * never pruned — so without an index that read scans every provider event the
+   * store has ever received, and gets slower every single day.
+   */
+  (t) => [index("idx_payment_event_order").on(t.orderId, t.createdAt)],
+);
 
 // ── Operator audit and deletion intents ──────────────────────────────────────
 
@@ -501,6 +525,12 @@ export const operatorEvent = sqliteTable(
   },
   (t) => [
     uniqueIndex("store_operator_event_idempotency_action_unique").on(t.idempotencyKey, t.action),
+    /**
+     * The other half of the order timeline. This is the fastest-growing table in
+     * the store — one row per operator command, forever — and the timeline
+     * filters it on `(target_type, target_id)`, which nothing else indexed.
+     */
+    index("idx_operator_event_target").on(t.targetType, t.targetId, t.createdAt),
   ],
 );
 

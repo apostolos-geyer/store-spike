@@ -349,6 +349,8 @@ export const SweepResult = Schema.Struct({
   healed: Schema.Number,
   released: Schema.Number,
   inconclusive: Schema.Number,
+  /** The run hit its bound — more work is waiting for the next one. */
+  remaining: Schema.Boolean,
 });
 
 export const SettleResult = Schema.Struct({
