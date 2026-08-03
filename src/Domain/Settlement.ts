@@ -32,7 +32,14 @@ import { eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import { Database, query, type DbStatement } from "../Services/Database.ts";
-import type { PaymentStatus, ProviderEvent } from "../Services/Payments.ts";
+import type { ProviderEvent } from "../Services/Payments.ts";
+import {
+  classifyEvent,
+  describesOurSession,
+  failedPaymentStatus,
+  isLateEvent,
+  isPaid,
+} from "../core/settlement-policy.ts";
 import { releaseStatements } from "./Reservations.ts";
 import { customerOrder, orderItem, paymentEvent } from "./Schema.ts";
 
@@ -41,41 +48,13 @@ export type Outcome = "applied" | "duplicate" | "ignored" | "retryable" | "dead"
 /** Delivery attempts before an event is written off. */
 export const MAX_ATTEMPTS = 5;
 
-/** Events that move an order toward paid. */
-const SETTLING = new Set([
-  "checkout.session.completed",
-  "checkout.session.async_payment_succeeded",
-]);
-
-/** Events that end an order without payment. Each must release stock. */
-const FAILING = new Set([
-  "checkout.session.expired",
-  "checkout.session.async_payment_failed",
-]);
-
 /**
- * MONEY GOING BACK.
- *
- * These arrive as CHARGE events, which carry no session and no metadata — the
- * payment intent recorded at settlement is the only join back to an order. They
- * are handled separately from `FAILING` because the order was genuinely paid and
- * may already be shipped, so the stock question has a different answer.
+ * The event-to-outcome policy lives in `core/settlement-policy.ts`: which
+ * events mean what, and when one has arrived too late to apply. Separating the
+ * decision from the SQL that acts on it is what makes the rules enumerable
+ * without a queue. Re-exported so existing callers are unchanged.
  */
-const REVERSING = new Set(["charge.refunded", "charge.dispute.created"]);
-
-/** THE PAID PREDICATE, stated once so no call site can disagree. */
-export const isPaid = (status: PaymentStatus | null): boolean =>
-  status === "paid" || status === "no_payment_required";
-
-/**
- * Statuses no event may move an order out of.
- *
- * `paid` is terminal against a FAILING event and `cancelled` against a SETTLING
- * one — anything already shipped or delivered is terminal against both. Without
- * this, a redelivered `completed` could un-cancel an order whose stock was
- * already released and resold.
- */
-const TERMINAL = new Set(["shipped", "delivered"]);
+export { isPaid } from "../core/settlement-policy.ts";
 
 /**
  * WHAT A SETTLED PAYMENT TELLS US ABOUT AN ORDER, in one place.
@@ -185,10 +164,9 @@ export const settle = Effect.fn("Settlement.settle")(function* (
    */
   if (event.livemode !== livemode) return yield* ignore();
 
-  const settling = SETTLING.has(event.type);
-  const failing = FAILING.has(event.type);
-  const reversing = REVERSING.has(event.type);
-  if (!settling && !failing && !reversing) return yield* ignore();
+  const eventClass = classifyEvent(event.type);
+  const { settling, reversing } = eventClass;
+  if (eventClass.ignorable) return yield* ignore();
   if (!event.sessionId && !event.orderId && !event.paymentIntentId) {
     return yield* ignore();
   }
@@ -266,40 +244,14 @@ export const settle = Effect.fn("Settlement.settle")(function* (
    * LATE-EVENT GUARD. The event is legitimate but the order has already moved
    * past the state it describes, so applying it would move money backwards.
    * Recorded as `ignored` so a redelivery is a `duplicate` rather than a
-   * perpetual retry.
+   * perpetual retry. Every rule behind this call is enumerated — and tested —
+   * in `core/settlement-policy.ts`.
    */
-  /**
-   * A REVERSAL IS NEVER LATE. `shipped` and `delivered` are terminal against a
-   * checkout event — a redelivered `completed` must not resurrect a cancelled
-   * order — but money coming back on an order already out the door is precisely
-   * the case an operator most needs recorded, so it is exempt.
-   */
-  /**
-   * A LATE EVENT NEVER MOVES AN ORDER BACKWARDS.
-   *
-   * `cancelled` is terminal against BOTH checkout classes, not just settling.
-   * The failing arm was missing, and its absence was not theoretical: the sweep
-   * expires a session and releases the order, the provider then emits
-   * `checkout.session.expired` BECAUSE we expired it, that event has a fresh id
-   * so it is not a duplicate, and the failing branch cancelled-and-released an
-   * order that was already cancelled and released.
-   *
-   * `paymentStatus === "paid"` is terminal against settling, so a redelivered
-   * `completed` carrying its original unpaid snapshot cannot demote a settled
-   * order back to `processing`. An async success arrives while the status is
-   * `processing`, so it still passes.
-   *
-   * Reversals bypass only the shipped/delivered arm — money coming back on a
-   * dispatched order is exactly what an operator must be told. They are safe to
-   * re-apply because the release is idempotent and the refunded total is written
-   * absolutely.
-   */
-  const alreadyTerminal = reversing
-    ? false
-    : TERMINAL.has(order.status) ||
-      ((settling || failing) && order.status === "cancelled") ||
-      (failing && order.status === "paid") ||
-      (settling && order.paymentStatus === "paid");
+  const alreadyTerminal = isLateEvent({
+    eventClass,
+    orderStatus: order.status,
+    orderPaymentStatus: order.paymentStatus,
+  });
   if (alreadyTerminal) {
     yield* Effect.orDie(database.run([record("ignored", order.id)]));
     return { outcome: "ignored" as const, orderNumber: order.orderNumber };
@@ -419,9 +371,7 @@ export const settle = Effect.fn("Settlement.settle")(function* (
      * session is the one checkout attached — or when no session was ever
      * recorded, which is the orphan case the fallback exists to repair.
      */
-    const describesOurSession =
-      order.sessionId === null ||
-      (event.sessionId !== null && event.sessionId === order.sessionId);
+    const ourSession = describesOurSession(order.sessionId, event.sessionId);
 
     /**
      * THE AMOUNTS ACTUALLY CHARGED, copied rather than recomputed.
@@ -432,7 +382,7 @@ export const settle = Effect.fn("Settlement.settle")(function* (
      * would produce a second opinion about money that has already moved — and
      * when a store's books disagree with its processor, the processor is right.
      */
-    const collected = describesOurSession
+    const collected = ourSession
       ? settledColumns({
           paymentIntentId: event.paymentIntentId,
           shipCountry: event.shipCountry,
@@ -483,7 +433,7 @@ export const settle = Effect.fn("Settlement.settle")(function* (
         .update(customerOrder)
         .set({
           status: "cancelled",
-          paymentStatus: event.type.endsWith("expired") ? "expired" : "failed",
+          paymentStatus: failedPaymentStatus(event.type),
           updatedAt: now,
         })
         .where(eq(customerOrder.id, order.id)) as unknown as DbStatement,
