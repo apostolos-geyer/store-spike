@@ -201,7 +201,9 @@ export default class SettlementWorker extends Cloudflare.Worker<SettlementWorker
       }).pipe(
         Effect.provide(layer),
         Effect.catchCause((cause) =>
-          HttpServerResponse.json({ error: String(cause).slice(0, 600) }, { status: 500 }),
+          Effect.flatMap(Effect.logError("store.request.failed", cause), () =>
+            HttpServerResponse.json({ error: "internal" }, { status: 500 }),
+          ),
         ),
       ),
 

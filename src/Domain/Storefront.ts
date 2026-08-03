@@ -15,7 +15,7 @@
  * so deleting or reordering an image today never rewrites what a published
  * release shows.
  */
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import { query, type ClassicDb } from "../Services/Database.ts";
@@ -59,6 +59,17 @@ export const listActiveProducts = Effect.fn("Storefront.listActiveProducts")(fun
   );
   if (rows.length === 0) return [] as ProductCardDTO[];
 
+  /**
+   * JOINED, not filtered by an id list — and the difference is a hard cliff.
+   *
+   * D1 allows at most 100 BOUND PARAMETERS PER QUERY. An `inArray` over the
+   * active releases spends one parameter per active product, so this query threw
+   * the moment the shop had a hundred live products, and it is the STOREFRONT
+   * LIST: the whole shop goes down at once, at a size nobody notices approaching.
+   *
+   * Re-deriving the active set inside the query costs zero parameters and no
+   * extra round trip, so there is no size at which it stops working.
+   */
   const covers = yield* query(() =>
     db
       .select({
@@ -68,12 +79,8 @@ export const listActiveProducts = Effect.fn("Storefront.listActiveProducts")(fun
         position: productReleaseImage.position,
       })
       .from(productReleaseImage)
-      .where(
-        inArray(
-          productReleaseImage.releaseId,
-          rows.map((row) => row.releaseId),
-        ),
-      )
+      .innerJoin(product, eq(product.activeReleaseId, productReleaseImage.releaseId))
+      .where(eq(product.status, "active"))
       .orderBy(asc(productReleaseImage.position)),
   );
 

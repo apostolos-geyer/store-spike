@@ -291,7 +291,7 @@ The cache-control sub-claim is the weakest part and I would drop it: `max-age=31
 Worth reporting because the comment is load-bearing and false, but as a low-severity gap, not a data leak.
 
 
-### O8. Public read routes return the raw Effect cause string to anonymous callers
+### O8. Public read routes return the raw Effect cause string to anonymous callers — **FIXED**
 
 **LOW** · `src/Workers/Catalog.ts:180` · lens `?` · reviewer confidence `high`
 
@@ -306,6 +306,23 @@ But the evidence section materially overstates what leaks, and the author will n
 So this is a real but low-severity infrastructure-detail disclosure (D1 error text, occasionally a column or table name), not a stack-trace/source-path leak. The D1 100-bound-parameter angle at Storefront.ts:62-78 is a separate latent bug (the `inArray` over every active release), not evidence for this one, and citing it here muddies the report. Worth a one-line fix — log the cause, return a static body — but it should be filed as low.
 
 
+
+## Found and fixed after the review, while acting on it
+
+### X1. `listActiveProducts` exceeded D1's 100-bound-parameter cap — **FIXED**
+
+**CRITICAL** · `src/Domain/Storefront.ts:62` · lens `follow-up`
+
+The synthesis flagged this as unverified and asked for it to be checked. It was
+real: D1 documents **"Maximum bound parameters per query | 100"**, and the cover
+lookup spent one parameter per active product via `inArray`. `GET /products` — the
+whole storefront — would have started throwing at roughly the hundredth live
+product, surfacing as a 500 carrying D1 error text (O8). Replaced with a join, so
+it costs zero parameters and has no size at which it stops working.
+
+The cart is now bounded at 20 lines in `Storefront.rpc.ts` for the same reason:
+pricing issues an `inArray` over distinct variants, so an unbounded cart was a 500
+any anonymous caller could trigger by posting a long enough list.
 
 ## Refuted — do not re-raise without new evidence
 

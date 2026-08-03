@@ -104,12 +104,19 @@ export class StorefrontRpcs extends RpcGroup.make(
        * and offering both rates lets them pick the wrong one.
        */
       destination: Destination,
+      /**
+       * BOUNDED, and not only for taste. Pricing the cart issues an `inArray`
+       * over the distinct variants, and D1 allows at most 100 bound parameters
+       * per query — so an unbounded cart is a 500 anyone can trigger on the
+       * public checkout endpoint by posting a long enough list. Twenty lines is
+       * far above any real order and far below the limit.
+       */
       items: Schema.Array(
         Schema.Struct({
           variantId: Schema.String,
           quantity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
         }),
-      ),
+      ).check(Schema.isMaxLength(20)),
     },
     success: PlacedOrder,
     error: CartRefused,

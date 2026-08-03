@@ -177,8 +177,16 @@ export default class CatalogWorker extends Cloudflare.Worker<CatalogWorker>()(
       }
     }).pipe(
       Effect.provide(layer),
+      /**
+       * LOGGED, NOT RETURNED. `query` wraps D1 in `Effect.promise`, so a database
+       * failure arrives here as a defect whose message is the raw driver text —
+       * table and column names included. That is free reconnaissance for an
+       * anonymous caller and tells a legitimate one nothing they can act on.
+       */
       Effect.catchCause((cause) =>
-        HttpServerResponse.json({ error: String(cause).slice(0, 600) }, { status: 500 }),
+        Effect.flatMap(Effect.logError("store.request.failed", cause), () =>
+          HttpServerResponse.json({ error: "internal" }, { status: 500 }),
+        ),
       ),
     );
 

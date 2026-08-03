@@ -201,10 +201,22 @@ export const productImage = sqliteTable(
 );
 
 /**
- * The frozen image set for a release: a copy of the images with their alt,
- * role, and position at publish time, so later media edits never rewrite a
- * published snapshot. The composite primary key means an image appears at most
- * once per release.
+ * The image set a release was published with — MEMBERSHIP AND ORDER, not bytes.
+ *
+ * A join row per (release, image) carrying the alt, role and position as they
+ * stood at publish time. The bytes live once in R2 under
+ * `products/{productId}/{imageId}` no matter how many releases include them, so
+ * publishing ten times costs ten small rows and zero extra storage.
+ *
+ * WHAT IT ACTUALLY PROTECTS AGAINST, stated precisely because the distinction
+ * matters: reordering media, changing alt text, changing a role, or adding and
+ * removing images on the DRAFT leaves published releases untouched. Deleting the
+ * underlying image does NOT — the foreign key cascades and every release
+ * containing it loses it. That is a deliberate, surfaced choice rather than a
+ * silent one: `planProductMediaDeletion` counts the affected releases and warns
+ * before an operator confirms.
+ *
+ * The composite primary key means an image appears at most once per release.
  */
 export const productReleaseImage = sqliteTable(
   "product_release_image",
