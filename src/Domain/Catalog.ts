@@ -46,8 +46,8 @@ import {
   type SaveProductDraftInput,
   type AdjustStockInput,
 } from "./Contracts.ts";
-import { isNonNegativeInt, sortBySize } from "./Money.ts";
-import { clampLimit, decodeCursor, splitPage } from "./Paging.ts";
+import { isNonNegativeInt, sortBySize } from "../core/money.ts";
+import { clampLimit, decodeCursor, splitPage } from "../core/paging.ts";
 import {
   product,
   productDraft,

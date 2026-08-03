@@ -32,7 +32,7 @@ import {
   type Session,
   type SessionStatus,
 } from "./Payments.ts";
-import { qualifiesForFreeShipping } from "../Domain/Money.ts";
+import { qualifiesForFreeShipping } from "../core/money.ts";
 import {
   SHIPPING_TAX_CODE,
   StripeConfig,

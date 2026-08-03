@@ -25,7 +25,7 @@ import {
   type ProductMediaRole,
   type StorefrontProductDTO,
 } from "./Contracts.ts";
-import { sortBySize } from "./Money.ts";
+import { sortBySize } from "../core/money.ts";
 import {
   product,
   productRelease,

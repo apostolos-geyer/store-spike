@@ -32,7 +32,7 @@ import {
   type SetOrderStatusInput,
   type ShippingAddress,
 } from "./Contracts.ts";
-import { clampLimit, decodeCursor, splitPage } from "./Paging.ts";
+import { clampLimit, decodeCursor, splitPage } from "../core/paging.ts";
 import { customerOrder, orderItem } from "./Schema.ts";
 
 /**

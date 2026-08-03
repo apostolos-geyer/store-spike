@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "NO_DESTROY=1 bun test test/settlement.integ.test.ts && NO_DESTROY=1 bun test test/stripe.e2e.test.ts && bun test test/store.integ.test.ts",
+    "test:unit": "bun test test/unit",
     "test:keep": "NO_DESTROY=1 bun test test/settlement.integ.test.ts && NO_DESTROY=1 bun test test/stripe.e2e.test.ts && NO_DESTROY=1 bun test test/store.integ.test.ts",
     "deploy": "alchemy deploy --stage spike",
     "destroy": "alchemy destroy --stage spike",
