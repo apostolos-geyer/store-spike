@@ -47,7 +47,7 @@ import {
   type AdjustStockInput,
 } from "./Contracts.ts";
 import { isNonNegativeInt, sortBySize } from "../core/money.ts";
-import { clampLimit, decodeCursor, splitPage } from "../core/paging.ts";
+import { pageWindow, splitPage } from "../core/paging.ts";
 import {
   product,
   productDraft,
@@ -88,17 +88,35 @@ const toDraftDTO = (row: {
  * the same instant with a strictly smaller id. Without the id tiebreak, several
  * products sharing an `updated_at` would be skipped or repeated at a page seam.
  */
+/**
+ * The draft projection, selected identically by the list and the detail read.
+ *
+ * ONE DEFINITION because both reads feed the same `toDraftDTO`, so they have to
+ * agree on what a draft IS. Held apart, a column added to one and not the other
+ * gives a list and a detail view that disagree about the same product — and the
+ * mapper would still typecheck against whichever it was written for.
+ *
+ * `getProduct` widens this with the pre-order run; it does not restate it.
+ */
+const draftColumns = {
+  productId: product.id,
+  slug: product.slug,
+  status: product.status,
+  updatedAt: product.updatedAt,
+  activeVersion: productRelease.version,
+  revision: productDraft.revision,
+  title: productDraft.title,
+  descriptionMarkdown: productDraft.descriptionMarkdown,
+  priceCents: productDraft.priceCents,
+};
+
 export const listProducts = Effect.fn("Catalog.listProducts")(function* (
   db: ClassicDb,
   input: ListProductsInput,
 ): Effect.fn.Return<CoreOutcome<ProductListPage, "invalid_cursor">> {
-  const limit = clampLimit(input.limit);
-
-  let after: { at: number; id: string } | null = null;
-  if (input.cursor !== undefined) {
-    after = decodeCursor(input.cursor);
-    if (!after) return { failure: err("invalid_cursor") };
-  }
+  const window = pageWindow(input);
+  if (!window.ok) return { failure: err("invalid_cursor") };
+  const { limit, after } = window.value;
 
   const filters = [
     input.status && input.status !== "all" ? eq(product.status, input.status) : undefined,
@@ -112,17 +130,7 @@ export const listProducts = Effect.fn("Catalog.listProducts")(function* (
 
   const rows = yield* query(() =>
     db
-      .select({
-        productId: product.id,
-        slug: product.slug,
-        status: product.status,
-        updatedAt: product.updatedAt,
-        activeVersion: productRelease.version,
-        revision: productDraft.revision,
-        title: productDraft.title,
-        descriptionMarkdown: productDraft.descriptionMarkdown,
-        priceCents: productDraft.priceCents,
-      })
+      .select(draftColumns)
       .from(product)
       .innerJoin(productDraft, eq(productDraft.productId, product.id))
       .leftJoin(productRelease, eq(productRelease.id, product.activeReleaseId))
@@ -152,15 +160,7 @@ export const getProduct = Effect.fn("Catalog.getProduct")(function* (
   const rows = yield* query(() =>
     db
       .select({
-        productId: product.id,
-        slug: product.slug,
-        status: product.status,
-        updatedAt: product.updatedAt,
-        activeVersion: productRelease.version,
-        revision: productDraft.revision,
-        title: productDraft.title,
-        descriptionMarkdown: productDraft.descriptionMarkdown,
-        priceCents: productDraft.priceCents,
+        ...draftColumns,
         preorderCap: product.preorderCap,
         preorderClaimed: product.preorderClaimed,
       })

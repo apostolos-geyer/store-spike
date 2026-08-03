@@ -43,6 +43,12 @@ class Refused extends Error {
  * second envelope is {@link expect}'s job, because some operations (a timeline,
  * the provider name) have no domain result to unwrap.
  */
+interface Envelope {
+  value?: unknown;
+  error?: string;
+  detail?: string;
+}
+
 export const call = async <T>(operation: string, payload?: unknown): Promise<T> => {
   const response = await fetch(`/api/${operation}`, {
     method: "POST",
@@ -50,12 +56,12 @@ export const call = async <T>(operation: string, payload?: unknown): Promise<T> 
     body: JSON.stringify(payload ?? {}),
   });
 
-  const body = (await response.json().catch(() => null)) as
-    | { ok?: boolean; value?: unknown; error?: string; detail?: string }
-    | null;
+  // A non-JSON body is itself the failure — an HTML error page, say — so it
+  // collapses to an empty envelope and the status carries the message.
+  const body: Envelope = await response.json().catch(() => ({}));
 
-  if (!response.ok || !body) {
-    throw new Error(body?.detail ?? body?.error ?? `request failed (${response.status})`);
+  if (!response.ok) {
+    throw new Error(body.detail ?? body.error ?? `request failed (${response.status})`);
   }
   return body.value as T;
 };

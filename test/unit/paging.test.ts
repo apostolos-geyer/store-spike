@@ -15,6 +15,7 @@ import {
   DEFAULT_PAGE_LIMIT,
   encodeCursor,
   MAX_PAGE_LIMIT,
+  pageWindow,
   splitPage,
 } from "../../src/core/paging.ts";
 
@@ -132,3 +133,42 @@ describe("splitPage", () => {
 /** Encode a raw payload the codec would otherwise never produce. */
 const encodeRaw = (value: string): string =>
   btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+/**
+ * `pageWindow` — the two paging inputs decided together.
+ *
+ * The asymmetry is the point and is easy to get backwards: a bad LIMIT is
+ * clamped, a bad CURSOR is refused. Silently starting from the top on an
+ * undecodable cursor would hand a caller page one while they believed they were
+ * paging forward, so the same list would be walked forever.
+ */
+describe("pageWindow", () => {
+  test("no cursor starts at the top with a clamped limit", () => {
+    expect(pageWindow({})).toEqual({ ok: true, value: { limit: DEFAULT_PAGE_LIMIT, after: null } });
+    expect(pageWindow({ limit: 5000 })).toEqual({
+      ok: true,
+      value: { limit: MAX_PAGE_LIMIT, after: null },
+    });
+    expect(pageWindow({ limit: 0 })).toEqual({ ok: true, value: { limit: 1, after: null } });
+  });
+
+  test("a decodable cursor is carried through beside the limit", () => {
+    const cursor = encodeCursor({ at: 1700000000000, id: "01ABC" });
+    expect(pageWindow({ cursor, limit: 10 })).toEqual({
+      ok: true,
+      value: { limit: 10, after: { at: 1700000000000, id: "01ABC" } },
+    });
+  });
+
+  test("an undecodable cursor is REFUSED, never treated as absent", () => {
+    for (const cursor of ["not-base64!!", "", "AAAA", encodeCursor({ at: 1, id: "x" }) + "!!"]) {
+      const result = pageWindow({ cursor });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toBe("invalid_cursor");
+    }
+  });
+
+  test("a bad limit alongside a bad cursor still refuses rather than clamping past it", () => {
+    expect(pageWindow({ cursor: "garbage!", limit: -1 }).ok).toBe(false);
+  });
+});

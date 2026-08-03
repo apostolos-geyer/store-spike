@@ -19,6 +19,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { OrderLines } from "../OrderLines.tsx";
 import {
   call,
   commandId,
@@ -727,18 +728,7 @@ const Order = ({ orderNumber, onDone }: { orderNumber: string; onDone: () => voi
         )}
       </dl>
 
-      <ul className="list">
-        {order.items.map((item, index) => (
-          <li key={index} className="row">
-            <span className="grow">
-              {item.title} · {item.size}
-            </span>
-            {item.preorder && <span className="pill">preorder</span>}
-            <span className="dim">×{item.quantity}</span>
-            <span className="num">{money(item.unitPriceCents)}</span>
-          </li>
-        ))}
-      </ul>
+      <OrderLines items={order.items} />
 
       <div className="row gap wrap">
         <input

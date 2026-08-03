@@ -13,6 +13,8 @@
  * Keyset rather than OFFSET because the ordering column is mutable: an edit
  * during pagination reshuffles an OFFSET page and silently skips rows.
  */
+import { err, ok, type DomainResult } from "./result.ts";
+
 export const DEFAULT_PAGE_LIMIT = 24;
 export const MAX_PAGE_LIMIT = 100;
 
@@ -48,6 +50,30 @@ export const decodeCursor = (raw: string): Cursor | null => {
 export const clampLimit = (limit: number | undefined): number => {
   if (limit === undefined || !Number.isFinite(limit)) return DEFAULT_PAGE_LIMIT;
   return Math.max(1, Math.min(MAX_PAGE_LIMIT, Math.trunc(limit)));
+};
+
+/**
+ * Read the two paging inputs a list endpoint takes, and decide them together.
+ *
+ * ONE DEFINITION of what a page REQUEST means, because both halves have a rule
+ * and neither is obvious. A limit is clamped and never refused; a cursor is
+ * REFUSED when it does not decode rather than silently treated as absent —
+ * quietly starting from the top would hand the caller page one while they
+ * believed they were paging, so the same list would be walked forever.
+ *
+ * `listProducts` and `listOrders` had this preamble letter for letter, over two
+ * different tables. Held apart, a change to either rule would have applied to
+ * one endpoint and not the other, and only the untouched one would look correct.
+ */
+export const pageWindow = (input: {
+  readonly limit?: number | undefined;
+  readonly cursor?: string | undefined;
+}): DomainResult<{ limit: number; after: Cursor | null }, "invalid_cursor"> => {
+  const limit = clampLimit(input.limit);
+  if (input.cursor === undefined) return ok({ limit, after: null });
+
+  const after = decodeCursor(input.cursor);
+  return after ? ok({ limit, after }) : err("invalid_cursor");
 };
 
 /**

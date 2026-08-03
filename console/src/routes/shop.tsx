@@ -20,6 +20,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { OrderLines } from "../OrderLines.tsx";
 import {
   call,
   commandId,
@@ -303,17 +304,7 @@ const Lookup = () => {
               </>
             )}
           </dl>
-          <ul className="list">
-            {find.data.items.map((item, index) => (
-              <li key={index} className="row">
-                <span className="grow">
-                  {item.title} · {item.size}
-                </span>
-                {item.preorder && <span className="pill">preorder</span>}
-                <span className="dim">×{item.quantity}</span>
-              </li>
-            ))}
-          </ul>
+          <OrderLines items={find.data.items} />
         </div>
       )}
       <p className="dim">

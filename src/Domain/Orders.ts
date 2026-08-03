@@ -32,7 +32,7 @@ import {
   type SetOrderStatusInput,
   type ShippingAddress,
 } from "./Contracts.ts";
-import { clampLimit, decodeCursor, splitPage } from "../core/paging.ts";
+import { pageWindow, splitPage } from "../core/paging.ts";
 import { customerOrder, orderItem } from "./Schema.ts";
 
 /**
@@ -137,13 +137,9 @@ export const listOrders = Effect.fn("Orders.listOrders")(function* (
   db: ClassicDb,
   input: OrderListInput,
 ): Effect.fn.Return<CoreOutcome<OrderListResult, "invalid_cursor">> {
-  const limit = clampLimit(input.limit);
-
-  let after: { at: number; id: string } | null = null;
-  if (input.cursor !== undefined) {
-    after = decodeCursor(input.cursor);
-    if (!after) return { failure: err("invalid_cursor") };
-  }
+  const window = pageWindow(input);
+  if (!window.ok) return { failure: err("invalid_cursor") };
+  const { limit, after } = window.value;
 
   const filters = [
     input.status && input.status !== "all" ? eq(customerOrder.status, input.status) : undefined,
