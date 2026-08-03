@@ -1,9 +1,9 @@
 /**
- * ONE STACK, FOUR WORKERS.
+ * ONE STACK, FIVE WORKERS.
  *
  * A stack is a state and lifecycle boundary. `Auth` in the platform repo earns
  * its own because it deploys first and publishes a routing contract to
- * strangers. These four deploy together and bind to each other — and a service
+ * strangers. These five deploy together and bind to each other — and a service
  * binding names a resource its stack OWNS and cannot cross a stack boundary. Cut
  * them into separate stacks and Edge → Commerce degrades from a binding into a
  * public URL, which is the opposite of what `url: false` is for.
@@ -13,6 +13,12 @@
  * them. Settlement is addressed because a PROVIDER calls it, and a provider
  * cannot call a service binding — its `fetch` carries its own authentication in
  * the form of a signature.
+ *
+ * Console is addressed for the same reason as Catalog — it serves a browser —
+ * but it is the only one here shaped like the platform's real frontends: it
+ * holds a binding and calls Commerce as plain methods. Edge and Catalog are
+ * stand-ins for consoles that live elsewhere; Console is a worked example of
+ * what replaces them.
  */
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -22,11 +28,14 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Output from "alchemy/Output";
 
+import * as Command from "alchemy/Command";
+
 import * as StripeDev from "./src/Infrastructure/StripeDev.ts";
 import { MediaBucket, StoreDatabase, StoreSchema } from "./src/Runtime.ts";
 import * as StripeConfig from "./src/Services/StripeConfig.ts";
 import { environmentFor } from "./src/Services/StripeConfig.ts";
 import CatalogWorker from "./src/Workers/Catalog.ts";
+import ConsoleWorker from "./src/Workers/Console.ts";
 import EdgeWorker from "./src/Workers/Edge.ts";
 import SettlementWorker from "./src/Workers/Settlement.ts";
 
@@ -76,6 +85,31 @@ export default Alchemy.Stack(
     const edge = yield* EdgeWorker;
 
     /**
+     * The console's SPA is built BEFORE the worker that serves it, for the same
+     * reason the schema resource runs before the database: the worker names
+     * `console/dist` as its assets directory, and a directory that does not
+     * exist yet uploads as an empty site rather than failing. Declaring the
+     * order here fixes it instead of leaving it to resolution order.
+     *
+     * `Build` content-hashes its inputs, so an unchanged `console/` skips the
+     * build entirely and a deploy that only touched a Worker stays fast.
+     *
+     * NO `memo` GLOBS, deliberately. They are resolved relative to `cwd` — which
+     * is `console` — so the obvious-looking `["console/**"]` matches nothing,
+     * hashes zero files, and pins the build as unchanged forever: every later
+     * edit to the SPA would deploy the first bundle. The default already hashes
+     * every non-gitignored file here plus the lockfile, and `console/dist` is
+     * gitignored, so the output cannot feed back into its own input hash.
+     */
+    yield* Command.Build("ConsoleBuild", {
+      command: "vite build",
+      cwd: "console",
+      outdir: "dist",
+    });
+
+    const consoleApp = yield* ConsoleWorker;
+
+    /**
      * The forwarder, pointed at the address the provider will actually use.
      *
      * `Command.Dev` runs under `alchemy dev` and is a no-op under
@@ -103,6 +137,8 @@ export default Alchemy.Stack(
       catalogUrl: catalog.url.as<string>(),
       edgeUrl: edge.url.as<string>(),
       settlementUrl: settlement.url.as<string>(),
+      /** Where to click. Operator page and storefront both live here. */
+      consoleUrl: consoleApp.url.as<string>(),
     };
   }),
 );

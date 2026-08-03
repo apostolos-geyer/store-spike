@@ -41,6 +41,7 @@ import * as Checkout from "../Domain/Checkout.ts";
 import * as Deletion from "../Domain/Deletion.ts";
 import * as Media from "../Domain/Media.ts";
 import * as Orders from "../Domain/Orders.ts";
+import * as Storefront from "../Domain/Storefront.ts";
 import * as Timeline from "../Domain/Timeline.ts";
 import { capabilities, handles } from "../Runtime.ts";
 import { Audit } from "../Services/Audit.ts";
@@ -513,6 +514,32 @@ export default class CommerceWorker extends Cloudflare.Worker<CommerceWorker>()(
             found.value.email.toLowerCase() === asked ||
             found.value.receiptEmail?.toLowerCase() === asked;
           return owns ? found : { ok: false as const, error: "not_found" as const };
+        }).pipe(Effect.provide(layer)),
+
+      /**
+       * The storefront READ MODEL, over the binding.
+       *
+       * These two were previously reachable only from inside Catalog's HTTP
+       * handlers, which meant a bound sibling — an SSR storefront, the console
+       * in `console/` — had no way to read the catalog except by making an HTTP
+       * request to a worker built for browsers. Catalog still serves them over
+       * HTTP, because those routes are cacheable and linkable and a browser
+       * wants them; this is the same read for a caller that holds a binding.
+       *
+       * Sourced from the ACTIVE RELEASE, like everything else a shopper sees.
+       * `listProducts`/`getProduct` above are the OPERATOR reads — draft-aware,
+       * envelope-wrapped — and are not interchangeable with these.
+       */
+      listStorefront: () =>
+        Effect.gen(function* () {
+          const database = yield* Database;
+          return yield* Storefront.listActiveProducts(database.db);
+        }).pipe(Effect.provide(layer)),
+
+      getStorefrontProduct: (slug: string) =>
+        Effect.gen(function* () {
+          const database = yield* Database;
+          return yield* Storefront.getActiveProductBySlug(database.db, slug);
         }).pipe(Effect.provide(layer)),
 
       /** What provider this deployment mints sessions with — asserted by the suite. */

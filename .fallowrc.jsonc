@@ -12,12 +12,20 @@
   // The Workers are named explicitly as well as via the stack: each is a
   // `Cloudflare.Worker` whose bundle entry is `import.meta.url`, which is a
   // runtime string no import graph can follow.
+  //
+  // The console SPA is a SECOND graph with its own root. `console/src/main.tsx`
+  // is named only by a `<script src>` in `console/index.html` — a runtime
+  // string, exactly like the Workers' `import.meta.url` — so it has to be
+  // declared. Its config is a root too: vite loads it by path, nothing imports
+  // it, and it is what makes `vite` and `@vitejs/plugin-react` reachable.
   "entry": [
     "alchemy.run.ts",
     "drizzle.config.ts",
     "src/Workers/*.ts",
     "test/unit/**/*.test.ts",
     "test/*.test.ts",
+    "console/src/main.tsx",
+    "console/vite.config.ts",
   ],
 
   "ignorePatterns": ["migrations/**", ".alchemy/**"],

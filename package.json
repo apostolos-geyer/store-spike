@@ -9,12 +9,19 @@
     "test:keep": "NO_DESTROY=1 bun test test/settlement.integ.test.ts && NO_DESTROY=1 bun test test/stripe.e2e.test.ts && NO_DESTROY=1 bun test test/store.integ.test.ts",
     "deploy": "alchemy deploy --stage spike",
     "destroy": "alchemy destroy --stage spike",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "console:build": "vite build --config console/vite.config.ts console",
+    "console:dev": "vite --config console/vite.config.ts console",
+    "console:check": "tsc --noEmit -p console/tsconfig.json"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.66.0",
+    "@tanstack/react-router": "^1.99.0",
     "alchemy": "2.0.0-beta.65",
     "drizzle-orm": "1.0.0-rc.4",
     "effect": "4.0.0-beta.101",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "stripe": "^22.4.0"
   },
   "devDependencies": {
@@ -22,8 +29,12 @@
     "@effect/platform-bun": "4.0.0-beta.101",
     "@effect/platform-node": "4.0.0-beta.101",
     "@types/bun": "latest",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
     "drizzle-kit": "1.0.0-rc.4",
     "typescript": "^5.7.2",
+    "vite": "^6.0.0",
     "wrangler": "^4.118.0"
   }
 }

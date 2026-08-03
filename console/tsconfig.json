@@ -1,0 +1,26 @@
+{
+  // The SPA typechecks on its OWN config, separate from the root.
+  //
+  // The root project compiles Workers: its `types` are `@cloudflare/workers-types`
+  // and `bun`, and it has no JSX setting. Pulling `.tsx` into it would mean
+  // giving the Worker build DOM-flavoured globals it must never see — the
+  // clearest example being `fetch`, which means two different things on the two
+  // sides of this boundary.
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true,
+    "types": ["vite/client"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
+}

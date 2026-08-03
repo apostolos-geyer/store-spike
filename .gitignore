@@ -12,3 +12,7 @@ node_modules/
 .env.*
 !.env.example
 .DS_Store
+
+# The console's build output. Produced by `ConsoleBuild` on every deploy and
+# uploaded straight to Cloudflare's asset store, so it is never a source input.
+console/dist/
