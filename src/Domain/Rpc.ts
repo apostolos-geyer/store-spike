@@ -378,7 +378,7 @@ const call = <F extends Schema.Struct.Fields>(fields: F) => ({
 });
 
 /**
- * Twenty-three procedures. Reads take no `commandId` — they have nothing to
+ * Twenty-seven procedures. Reads take no `commandId` — they have nothing to
  * replay — which is itself part of the contract rather than a convention.
  */
 export class OperatorRpcs extends RpcGroup.make(

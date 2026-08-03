@@ -91,7 +91,7 @@ src/
     versions.ts  result.ts  release labels; the result envelope + idempotency key
     actors.ts               operator vs customer, by subject namespace
   Domain/                   emits statements; never commits
-    Rpc.ts                  the schema-validated trust boundary (23 procedures)
+    Rpc.ts                  the schema-validated trust boundary (27 procedures)
     Contracts.ts            DTOs DERIVED from Rpc schemas + the OperatorCall envelope
     Schema.ts               11 tables: release model, orders, audit, deletion intents
     Catalog.ts              draft → release → active release
@@ -107,7 +107,7 @@ src/
     Database.ts  Ids.ts  Blobs.ts  Audit.ts  Payments.ts  PaymentsFake.ts
   Workers/
     Catalog.ts              public storefront reads + media streaming
-    Commerce.ts             url:false, the 23-method operator surface
+    Commerce.ts             url:false, the 27-method operator surface
     Settlement.ts           url:false, webhook + queue + cron
     Edge.ts                 the trust boundary: RpcServer.toHttpEffect
 ```
