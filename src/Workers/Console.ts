@@ -123,6 +123,39 @@ const optionalNum = (payload: Payload, key: string): number | undefined => {
   return num(payload, key);
 };
 
+/**
+ * Narrow a string from the body to one of a closed set.
+ *
+ * THE ONLY UNTYPED HOP IS THIS ONE. `Console → Commerce` is a service binding:
+ * the argument types are shared directly, nothing is serialized, and no cast is
+ * involved. What arrives from the BROWSER is `Record<string, unknown>`, and
+ * every literal union the domain takes — a status, a bump, a media role — is
+ * just a string until something checks it.
+ *
+ * `find` rather than `includes` so the result is `T` by inference and the
+ * narrowing needs no assertion. An earlier version wrote `as never` at each of
+ * these call sites, which is not a narrowing at all: it forwarded whatever the
+ * browser sent. The only thing catching `status: "banana"` was the
+ * `product_status_valid` CHECK constraint rejecting the write, which cost a 500
+ * where the caller should have been told which field was wrong.
+ */
+const oneOf = <T extends string>(payload: Payload, key: string, allowed: readonly T[]): T => {
+  const value = str(payload, key);
+  const found = allowed.find((option) => option === value);
+  if (found === undefined) throw new Error(`${key} must be one of: ${allowed.join(", ")}`);
+  return found;
+};
+
+const optionalOneOf = <T extends string>(
+  payload: Payload,
+  key: string,
+  allowed: readonly T[],
+): T | undefined => (payload[key] === undefined || payload[key] === "" ? undefined : oneOf(payload, key, allowed));
+
+const PRODUCT_STATUS = ["draft", "active", "unavailable", "archived"] as const;
+const ORDER_STATUS = ["pending", "paid", "shipped", "delivered", "cancelled"] as const;
+const FILTER = "all" as const;
+
 export default class ConsoleWorker extends Cloudflare.Worker<ConsoleWorker>()(
   "Console",
   {
@@ -216,7 +249,7 @@ export default class ConsoleWorker extends Cloudflare.Worker<ConsoleWorker>()(
       listProducts: (p) =>
         commerce.listProducts(
           readEnvelope("listProducts", {
-            status: optionalStr(p, "status") as never,
+            status: optionalOneOf(p, "status", [...PRODUCT_STATUS, FILTER]),
             limit: optionalNum(p, "limit"),
             cursor: optionalStr(p, "cursor"),
           }),
@@ -258,7 +291,7 @@ export default class ConsoleWorker extends Cloudflare.Worker<ConsoleWorker>()(
             productId: str(p, "productId"),
             expectedRevision: num(p, "expectedRevision"),
             version: optionalStr(p, "version"),
-            bump: optionalStr(p, "bump") as never,
+            bump: optionalOneOf(p, "bump", ["major", "minor", "patch"]),
           }),
         ),
 
@@ -266,7 +299,7 @@ export default class ConsoleWorker extends Cloudflare.Worker<ConsoleWorker>()(
         commerce.setProductStatus(
           envelope("setProductStatus", str(p, "commandId"), {
             productId: str(p, "productId"),
-            status: str(p, "status") as never,
+            status: oneOf(p, "status", PRODUCT_STATUS),
           }),
         ),
 
@@ -278,7 +311,7 @@ export default class ConsoleWorker extends Cloudflare.Worker<ConsoleWorker>()(
             size: str(p, "size"),
             sku: str(p, "sku"),
             stock: num(p, "stock"),
-            mode: optionalStr(p, "mode") as never,
+            mode: optionalOneOf(p, "mode", ["stock", "preorder"]),
             expectedShipAt: optionalNum(p, "expectedShipAt") ?? null,
           }),
         ),
@@ -320,7 +353,7 @@ export default class ConsoleWorker extends Cloudflare.Worker<ConsoleWorker>()(
             bytes: bytes.buffer,
             contentType: str(p, "contentType"),
             alt: str(p, "alt"),
-            role: str(p, "role") as never,
+            role: oneOf(p, "role", ["cover", "gallery", "evidence"]),
           }),
         );
       },
@@ -329,7 +362,7 @@ export default class ConsoleWorker extends Cloudflare.Worker<ConsoleWorker>()(
       listOrders: (p) =>
         commerce.listOrders(
           readEnvelope("listOrders", {
-            status: optionalStr(p, "status") as never,
+            status: optionalOneOf(p, "status", [...ORDER_STATUS, FILTER]),
             limit: optionalNum(p, "limit"),
             cursor: optionalStr(p, "cursor"),
           }),
@@ -344,7 +377,8 @@ export default class ConsoleWorker extends Cloudflare.Worker<ConsoleWorker>()(
         commerce.setOrderStatus(
           envelope("setOrderStatus", str(p, "commandId"), {
             orderNumber: str(p, "orderNumber"),
-            status: str(p, "status") as never,
+            // The contract admits only these two directly.
+            status: oneOf(p, "status", ["paid", "cancelled"]),
           }),
         ),
 
@@ -389,7 +423,7 @@ export default class ConsoleWorker extends Cloudflare.Worker<ConsoleWorker>()(
           customerCall(email, str(p, "commandId"), {
             email,
             customerId: `customer:${email.trim().toLowerCase()}`,
-            destination: str(p, "destination") as never,
+            destination: oneOf(p, "destination", ["CA", "US"]),
             items: items.map((item) => {
               const line = item as Payload;
               return { variantId: str(line, "variantId"), quantity: num(line, "quantity") };

@@ -39,6 +39,41 @@ export class OrderNotFound extends Schema.TaggedErrorClass<OrderNotFound>()("Ord
 /** Where a cart is going. Fixes the shipping rate and the address form. */
 const Destination = Schema.Literals(["CA", "US"]);
 
+const MediaRole = Schema.Literals(["cover", "gallery", "evidence"]);
+
+/**
+ * The storefront READS, declared rather than served as loose JSON.
+ *
+ * These were the only public reads without a schema: Catalog answered
+ * `GET /products` and `/products/:slug` with `HttpServerResponse.json`, so the
+ * shapes existed as hand-written interfaces in `Contracts.ts` with nothing
+ * checking them and no client able to share them. Every consumer therefore had
+ * to restate the shape and cast — which is exactly the hand-rolled boundary
+ * this contract exists to make unnecessary.
+ */
+export const ProductCard = Schema.Struct({
+  slug: Schema.String,
+  title: Schema.String,
+  priceCents: Schema.Number,
+  version: Schema.String,
+  coverHref: Schema.NullOr(Schema.String),
+});
+
+export const StorefrontProduct = Schema.Struct({
+  slug: Schema.String,
+  title: Schema.String,
+  descriptionMarkdown: Schema.NullOr(Schema.String),
+  priceCents: Schema.Number,
+  version: Schema.String,
+  media: Schema.Array(
+    Schema.Struct({ href: Schema.String, alt: Schema.String, role: MediaRole }),
+  ),
+  /** `available` is DERIVED server-side from live stock and the pre-order run. */
+  variants: Schema.Array(
+    Schema.Struct({ id: Schema.String, size: Schema.String, available: Schema.Boolean }),
+  ),
+});
+
 const PlacedOrder = Schema.Struct({
   orderNumber: Schema.String,
   /**
@@ -144,6 +179,21 @@ export class StorefrontRpcs extends RpcGroup.make(
    * A mismatch returns `OrderNotFound`, the same error as a nonexistent order,
    * so the response never confirms that a number is real.
    */
+  /**
+   * The public catalog reads. Anonymous, no payload beyond a slug, and sourced
+   * only from the ACTIVE RELEASE — a draft edit changes nothing here until it
+   * is published.
+   */
+  Rpc.make("listStorefront", {
+    payload: {},
+    success: Schema.Array(ProductCard),
+  }),
+
+  Rpc.make("getStorefrontProduct", {
+    payload: { slug: Schema.String },
+    success: Schema.NullOr(StorefrontProduct),
+  }),
+
   Rpc.make("getMyOrder", {
     payload: { orderNumber: Schema.String, email: Schema.String },
     success: CustomerOrderView,

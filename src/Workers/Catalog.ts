@@ -46,6 +46,24 @@ export default class CatalogWorker extends Cloudflare.Worker<CatalogWorker>()(
     const commerce = yield* Cloudflare.Workers.bindWorker(CommerceWorker);
 
     const handlers = StorefrontRpcs.toLayer({
+      /**
+       * The same active-release reads the GET routes below answer, now declared
+       * so a client shares the type instead of restating it.
+       */
+      listStorefront: () =>
+        Effect.provide(
+          Effect.flatMap(Database, (database) => Storefront.listActiveProducts(database.db)),
+          layer,
+        ),
+
+      getStorefrontProduct: ({ slug }) =>
+        Effect.provide(
+          Effect.flatMap(Database, (database) =>
+            Storefront.getActiveProductBySlug(database.db, slug),
+          ),
+          layer,
+        ),
+
       placeOrder: ({ commandId, email, destination, items }) =>
         Effect.flatMap(
           commerce.placeOrder(

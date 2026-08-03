@@ -14,6 +14,7 @@
  *    errors are both {@link DomainResult} values.
  */
 import type * as Rpc from "./Rpc.ts";
+import type * as StorefrontRpc from "./Storefront.rpc.ts";
 import type { Bump } from "../core/versions.ts";
 
 // ── Result envelope ──────────────────────────────────────────────────────────
@@ -265,21 +266,10 @@ export interface IngestProductMediaInput {
 
 // ── Storefront DTOs ──────────────────────────────────────────────────────────
 
-/** What the storefront list shows. Sourced from the ACTIVE RELEASE, never the draft. */
-export interface ProductCardDTO {
-  slug: string;
-  title: string;
-  priceCents: number;
-  version: string;
-  coverHref: string | null;
-}
-
-export interface StorefrontProductDTO {
-  slug: string;
-  title: string;
-  descriptionMarkdown: string | null;
-  priceCents: number;
-  version: string;
-  media: Array<{ href: string; alt: string; role: ProductMediaRole }>;
-  variants: Array<{ id: string; size: string; available: boolean }>;
-}
+/**
+ * DERIVED FROM THE SCHEMA, like every other DTO here. These two were the
+ * exception — hand-written twins of shapes that had no schema at all, because
+ * the storefront reads were served as loose JSON rather than declared.
+ */
+export type ProductCardDTO = typeof StorefrontRpc.ProductCard.Type;
+export type StorefrontProductDTO = typeof StorefrontRpc.StorefrontProduct.Type;
