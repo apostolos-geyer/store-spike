@@ -47,7 +47,13 @@ import CatalogWorker from "./Catalog.ts";
 import CommerceWorker from "./Commerce.ts";
 import SettlementWorker from "./Settlement.ts";
 
-/** @see `Edge.ts` — the same stand-in, for the same reason. */
+/**
+ * @see `Edge.ts` — the same stand-in, for the same reason.
+ *
+ * NOT A SECURITY FINDING; see `CLAUDE.md`. What IS one, and the reason the
+ * table below is a closed list, is a generic passthrough: a binding grants the
+ * WHOLE Commerce surface.
+ */
 const CONSOLE_ACTOR: OperatorActor = {
   sub: "operator:console",
   email: "operator@console.local",

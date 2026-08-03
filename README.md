@@ -23,6 +23,25 @@ restart; read them from the printed output rather than assuming.
 Pinned to `platform/`'s versions — effect `4.0.0-beta.101`, drizzle-orm
 `1.0.0-rc.4`, alchemy `2.0.0-beta.65` — so it ports without version drift.
 
+> ### There is no authentication in this repo, on purpose
+>
+> The platform supplies identity at two layers that do not exist here —
+> Cloudflare Access for operators, a user IdP for customers. This spike carries
+> neither, so the domain and settlement machinery can be driven end to end
+> without an IdP in a subsystem that has no opinion about identity.
+>
+> What the code *does* implement is the **service binding as the authorization
+> boundary**: `Commerce` is `url: false`, has no address, and trusts
+> `meta.actor` as already validated by its caller. `SPIKE_ACTOR` and
+> `CONSOLE_ACTOR` are the two constants standing in for that check, and
+> replacing them is the entire authorization seam.
+>
+> So "the operator surface is unauthenticated" is the design, not a finding.
+> **`CLAUDE.md` scopes this precisely** — what is deliberate, and what is still
+> a real defect regardless (a generic passthrough, a widened customer
+> projection, an addressed `Commerce`, SQL from request input). Read it before
+> filing a security issue.
+
 ```sh
 bun install
 bun run db:generate                          # regenerate migrations after a schema edit

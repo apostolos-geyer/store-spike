@@ -55,6 +55,11 @@ import SettlementWorker from "./Settlement.ts";
  * means replacing this one function with a session read — the shape is what
  * matters: a stable subject plus a verified email, minted server-side and never
  * accepted from the browser.
+ *
+ * NOT A SECURITY FINDING. This repo carries no IdP by design; the platform
+ * supplies Cloudflare Access on this side and a user IdP on the customer side.
+ * Replacing this constant IS the authorization seam. See `CLAUDE.md`, which
+ * scopes what is deliberate here and what is still a real defect.
  */
 const SPIKE_ACTOR: OperatorActor = {
   sub: "operator:spike",
