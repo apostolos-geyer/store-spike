@@ -217,25 +217,96 @@ const Product = ({ productId }: { productId: string }) => {
       <Variants productId={productId} variants={variants} onDone={refresh} />
       <Preorder productId={productId} draft={draft} preorder={preorder} onDone={refresh} />
 
-      <details>
-        <summary>media ({media.length})</summary>
-        {media.length === 0 ? (
-          <p className="dim">
-            none — publish refuses with <code>missing_media</code> until a cover exists. Uploading
-            takes bytes, so it is driven from the integration suite rather than here.
-          </p>
-        ) : (
-          <ul className="list">
-            {media.map((item) => (
-              <li key={item.id} className="row">
-                <span className="grow">{item.alt || item.id}</span>
-                <span className="pill">{item.role}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </details>
+      <Media productId={productId} media={media} onDone={refresh} />
     </div>
+  );
+};
+
+/**
+ * Media, and the reason it is not optional: publish refuses with
+ * `missing_media` until a product has a COVER. Without an upload here the
+ * lifecycle dead-ends at the publish gate.
+ *
+ * The file is read as base64 because the `/api` body is JSON and JSON has no
+ * binary frame. `FileReader` hands back a data URL, so the prefix is stripped
+ * before sending — the worker decodes the rest into the ArrayBuffer the domain
+ * takes.
+ */
+const Media = ({
+  productId,
+  media,
+  onDone,
+}: {
+  productId: string;
+  media: ProductDetail["media"];
+  onDone: () => void;
+}) => {
+  const [role, setRole] = useState("cover");
+  const [alt, setAlt] = useState("");
+
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("could not read file"));
+        reader.readAsDataURL(file);
+      });
+      return expect<unknown>("ingestProductMedia", {
+        productId,
+        bytesBase64: dataUrl.slice(dataUrl.indexOf(",") + 1),
+        contentType: file.type,
+        alt: alt || file.name,
+        role,
+        commandId: commandId(),
+      });
+    },
+    onSuccess: onDone,
+  });
+
+  return (
+    <section className="block">
+      <h3>Media</h3>
+      <ul className="list">
+        {media.map((item) => (
+          <li key={item.id} className="row">
+            <img className="thumb" src={item.href} alt={item.alt} />
+            <span className="grow">{item.alt || item.id}</span>
+            <span className="pill">{item.role}</span>
+          </li>
+        ))}
+        {media.length === 0 && (
+          <li className="dim">
+            none — publish refuses with <code>missing_media</code> until a cover exists
+          </li>
+        )}
+      </ul>
+      <div className="row gap wrap">
+        <select value={role} onChange={(e) => setRole(e.target.value)}>
+          <option value="cover">cover</option>
+          <option value="gallery">gallery</option>
+          <option value="evidence">evidence</option>
+        </select>
+        <input value={alt} onChange={(e) => setAlt(e.target.value)} placeholder="alt text" />
+        <input
+          type="file"
+          accept="image/*"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) upload.mutate(file);
+          }}
+        />
+      </div>
+      {upload.isPending && <p className="dim">uploading…</p>}
+      <Outcome error={upload.error} />
+      <p className="dim">
+        Bytes are stored in R2 and streamed back through Catalog, so the key never leaves the
+        system and access stays revocable. <strong>A thumbnail stays blank until the product is
+        active</strong> — <code>/media/:id</code> INNER JOINs on active status, so withdrawing a
+        product also kills every image link anyone already had. That is the gate working, not a
+        broken upload.
+      </p>
+    </section>
   );
 };
 

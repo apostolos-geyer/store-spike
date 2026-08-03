@@ -38,6 +38,7 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { deriveIdempotencyKey, type OperatorActor, type OperatorCall } from "../Domain/Contracts.ts";
+import CatalogWorker from "./Catalog.ts";
 import CommerceWorker from "./Commerce.ts";
 import SettlementWorker from "./Settlement.ts";
 
@@ -162,6 +163,58 @@ export default class ConsoleWorker extends Cloudflare.Worker<ConsoleWorker>()(
     const settlement = yield* Cloudflare.Workers.bindWorker(SettlementWorker);
 
     /**
+     * Catalog is bound for ONE reason: `/media/:id`.
+     *
+     * `mediaHref` is a root-relative path, and the worker that serves it is
+     * Catalog — media is streamed from R2 through a worker rather than from a
+     * public bucket URL, so the key never leaves the system and access stays
+     * revocable. On this origin that path is just another unmatched route, so
+     * every `<img>` in the console resolved to the SPA shell instead of an
+     * image.
+     *
+     * Proxying keeps the property that makes the indirection worth having: the
+     * bytes still travel a binding, never the public internet, and Console
+     * never learns the R2 key.
+     */
+    yield* Cloudflare.Workers.bindWorker(CatalogWorker);
+
+    /**
+     * The asset server, reached through the binding alchemy adds for us
+     * (`Assets.local("ASSETS")`) whenever `assets` is set.
+     *
+     * WHY THE WORKER SERVES THE SPA ITSELF rather than letting the platform do
+     * it. `runWorkerFirst` is an ALLOW-LIST in production — only `/api/*`
+     * reaches this script and static files are served without ever waking it.
+     * The local dev runtime does not read it that way:
+     *
+     *   invoke_user_worker_ahead_of_assets: worker.assets?.runWorkerFirst !== false
+     *
+     * An array is `!== false`, so under `alchemy dev` EVERY path arrives here —
+     * including `/operator` and every hashed bundle. Without this fallback the
+     * console 404s on itself locally while working when deployed, which is the
+     * worst shape a bug can have.
+     */
+    const environment = yield* Cloudflare.Workers.WorkerEnvironment;
+    const assets = environment["ASSETS"] as
+      | { fetch(request: Request): Promise<Response> }
+      | undefined;
+
+    /**
+     * The raw Catalog stub, read by binding name rather than through
+     * `bindWorker`'s return value.
+     *
+     * `bindWorker` types a worker by its SHAPE, and Catalog's shape is
+     * `{ fetch: HttpEffect }` — an Effect describing a handler, not a callable
+     * that takes a Request. What the runtime puts in the environment is an
+     * ordinary Cloudflare service stub, whose `fetch` is exactly what a proxy
+     * needs. The `bindWorker` call above is still what DECLARES the binding;
+     * this only reaches the value it produced.
+     */
+    const catalog = environment["Catalog"] as
+      | { fetch(request: Request): Promise<Response> }
+      | undefined;
+
+    /**
      * THE CLOSED TABLE. Every key is one operation and names one binding call.
      *
      * A request for a key that is not here is a 404 — which is the whole
@@ -256,6 +309,31 @@ export default class ConsoleWorker extends Cloudflare.Worker<ConsoleWorker>()(
             reason: str(p, "reason"),
           }),
         ),
+
+      /**
+       * Media ingest. Publish REFUSES with `missing_media` until a product has a
+       * cover, so without this the console can walk the lifecycle right up to
+       * the gate and no further — which is where it stopped the first time it
+       * was driven.
+       *
+       * Bytes arrive base64 because the JSON body has no binary frame. Decoded
+       * here rather than in the page, so what crosses the binding is the
+       * ArrayBuffer the domain actually wants.
+       */
+      ingestProductMedia: (p) => {
+        const binary = atob(str(p, "bytesBase64"));
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+        return commerce.ingestProductMedia(
+          envelope("ingestProductMedia", str(p, "commandId"), {
+            productId: str(p, "productId"),
+            bytes: bytes.buffer,
+            contentType: str(p, "contentType"),
+            alt: str(p, "alt"),
+            role: str(p, "role") as never,
+          }),
+        );
+      },
 
       // ── Operator: orders ───────────────────────────────────────────────────
       listOrders: (p) =>
@@ -375,13 +453,27 @@ export default class ConsoleWorker extends Cloudflare.Worker<ConsoleWorker>()(
         const request = yield* HttpServerRequest.HttpServerRequest;
         const path = new URL(request.url, "http://console").pathname;
 
+        /** Media belongs to Catalog. Forwarded over the binding, unchanged. */
+        if (path.startsWith("/media/") && catalog) {
+          const streamed = yield* Effect.promise(() =>
+            catalog.fetch(request.source as Request),
+          );
+          return HttpServerResponse.fromWeb(streamed);
+        }
+
         /**
-         * Assets are served before this handler for everything except `/api/*`
-         * (see `runWorkerFirst`), so anything reaching here that is not an API
-         * call is a routing mistake rather than a page request.
+         * Not an API call, so it is a page or a bundle: hand it to the asset
+         * server untouched, which applies `notFoundHandling` and returns
+         * `index.html` for a client-side route like `/operator`.
          */
         if (!path.startsWith("/api/")) {
-          return yield* HttpServerResponse.json({ error: "not_found", path }, { status: 404 });
+          if (!assets) {
+            return yield* HttpServerResponse.json({ error: "not_found", path }, { status: 404 });
+          }
+          const served = yield* Effect.promise(() =>
+            assets.fetch(request.source as Request),
+          );
+          return HttpServerResponse.fromWeb(served);
         }
 
         const operation = operations[path.slice("/api/".length)];

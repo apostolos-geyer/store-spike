@@ -124,15 +124,12 @@ main {
   min-width: 0;
 }
 
-.col.wide {
-  order: -1;
-}
-
-@media (max-width: 900px) {
-  .col.wide {
-    order: 0;
-  }
-}
+/*
+ * No `order` juggling. The DOM order — controls first, then the detail pane
+ * they drive — reads correctly in both the two-column and stacked layouts, and
+ * an `order: -1` here silently put the wide column on the LEFT, which put
+ * "select a product" above the list you select from.
+ */
 
 .card {
   background: var(--panel);
@@ -431,4 +428,12 @@ details summary {
 
 a {
   color: var(--accent);
+}
+
+.thumb {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 3px;
+  border: 1px solid var(--line);
 }

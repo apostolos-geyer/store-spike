@@ -1,8 +1,24 @@
 # store
 
 The commerce substrate for the somewhatintelligent platform: one alchemy stack,
-four Workers, a schema-validated RPC boundary, and an integration suite that
+five Workers, a schema-validated RPC boundary, and an integration suite that
 deploys the whole thing against real Cloudflare and tears it down.
+
+The fifth is `Console` — a small TanStack SPA that binds Commerce and drives
+both sides of the store from a browser. It is the only worker here shaped like
+the platform's real frontends, and the fastest way to see the system work:
+
+```sh
+bun alchemy dev        # builds console/dist, then serves every worker locally
+                       # → open the consoleUrl it prints
+```
+
+Note the dev loop's two sharp edges: `alchemy dev` does NOT rebuild `console/`
+when its sources change (it watches Worker sources only), and the asset manifest
+is read once at worker start — so after editing the SPA, run `bun run
+console:build` and restart `alchemy dev`, or use `bun run console:dev` for HMR
+with `/api` proxied at the worker. Local ports are also reassigned on each
+restart; read them from the printed output rather than assuming.
 
 Pinned to `platform/`'s versions — effect `4.0.0-beta.101`, drizzle-orm
 `1.0.0-rc.4`, alchemy `2.0.0-beta.65` — so it ports without version drift.
