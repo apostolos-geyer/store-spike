@@ -227,39 +227,3 @@ export const releaseStatements = (
       ) as unknown as DbStatement,
   ];
 };
-
-export const restoreStatements = (
-  db: ClassicDb,
-  lines: readonly RestorableLine[],
-): readonly DbStatement[] => [
-  ...lines.map(
-    (line) =>
-      db
-        .update(productVariant)
-        .set({ stock: sql`${productVariant.stock} + ${line.quantity}` })
-        .where(eq(productVariant.id, line.variantId)) as unknown as DbStatement,
-  ),
-  /**
-   * AND THE RUN PLACE. A pre-order that expires or is refunded must hand its
-   * place back, or the run silently shrinks: the cap still reads 200, the
-   * counter still reads 200, and nobody can buy the twelve shirts that were
-   * abandoned. Because the counter is what the guard tests, that loss is
-   * permanent and invisible.
-   *
-   * Keyed off the ORDER LINE's snapshot rather than the variant's current mode,
-   * so flipping a variant to `stock` when the run lands cannot orphan the claims
-   * placed while it was a pre-order.
-   */
-  ...runClaims(
-    lines.map((line) => ({
-      variantId: line.variantId,
-      productId: line.productId,
-      title: "",
-      size: "",
-      unitPriceCents: 0,
-      quantity: line.quantity,
-      preorder: line.preorder,
-      expectedShipAt: null,
-    })),
-  ).map((claim) => compensateRunStatement(db, claim)),
-];

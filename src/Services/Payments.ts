@@ -176,4 +176,3 @@ export class Payments extends Context.Service<
 >()("store/Services/Payments") {}
 
 
-export type PaymentsService = Payments["Service"];

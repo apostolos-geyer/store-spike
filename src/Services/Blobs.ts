@@ -37,8 +37,6 @@ export interface StoredBlob {
 export const productMediaKey = (productId: string, imageId: string): string =>
   `products/${productId}/${imageId}`;
 
-export const productMediaPrefix = (productId: string): string => `products/${productId}/`;
-
 export class Blobs extends Context.Service<
   Blobs,
   {
@@ -118,4 +116,3 @@ export class Blobs extends Context.Service<
     );
 }
 
-export type BlobsService = Blobs["Service"];

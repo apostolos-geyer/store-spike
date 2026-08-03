@@ -50,7 +50,6 @@ export const VARIANT_MODES = ["stock", "preorder"] as const;
 export type VariantMode = (typeof VARIANT_MODES)[number];
 
 export const PRODUCT_IMAGE_ROLES = ["cover", "gallery", "evidence"] as const;
-export type ProductImageRole = (typeof PRODUCT_IMAGE_ROLES)[number];
 
 // ── Catalog ──────────────────────────────────────────────────────────────────
 
@@ -585,10 +584,3 @@ export const deletionIntent = sqliteTable("store_operator_deletion_intent", {
  */
 export { fakeSession } from "../Services/PaymentsFake.ts";
 
-export type ProductRow = typeof product.$inferSelect;
-export type ProductDraftRow = typeof productDraft.$inferSelect;
-export type ProductReleaseRow = typeof productRelease.$inferSelect;
-export type ProductImageRow = typeof productImage.$inferSelect;
-export type ProductVariantRow = typeof productVariant.$inferSelect;
-export type CustomerOrderRow = typeof customerOrder.$inferSelect;
-export type OrderItemRow = typeof orderItem.$inferSelect;

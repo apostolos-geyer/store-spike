@@ -55,7 +55,7 @@ export class Ids extends Context.Service<
       const seed = () => {
         const bytes = new Uint8Array(RANDOM_LENGTH);
         crypto.getRandomValues(bytes);
-        for (let i = 0; i < RANDOM_LENGTH; i += 1) randomness[i] = bytes[i] % 32;
+        for (let i = 0; i < RANDOM_LENGTH; i += 1) randomness[i] = (bytes[i] ?? 0) % 32;
       };
 
       /**
@@ -65,8 +65,8 @@ export class Ids extends Context.Service<
        */
       const increment = () => {
         for (let i = RANDOM_LENGTH - 1; i >= 0; i -= 1) {
-          if (randomness[i] < MAX_SYMBOL) {
-            randomness[i] += 1;
+          if ((randomness[i] ?? 0) < MAX_SYMBOL) {
+            randomness[i] = (randomness[i] ?? 0) + 1;
             return;
           }
           randomness[i] = 0;
@@ -82,7 +82,7 @@ export class Ids extends Context.Service<
           seed();
         }
         let out = encodeTime(now);
-        for (let i = 0; i < RANDOM_LENGTH; i += 1) out += ENCODING[randomness[i]];
+        for (let i = 0; i < RANDOM_LENGTH; i += 1) out += ENCODING[randomness[i] ?? 0];
         return out;
       });
 
@@ -116,4 +116,3 @@ export class Ids extends Context.Service<
     );
 }
 
-export type IdsService = Ids["Service"];

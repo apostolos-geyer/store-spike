@@ -257,4 +257,3 @@ export class StripeConfig extends Context.Service<
     Layer.succeed(StripeConfig, service);
 }
 
-export type StripeConfigService = StripeConfig["Service"];

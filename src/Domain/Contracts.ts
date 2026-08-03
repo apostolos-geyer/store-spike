@@ -7,9 +7,9 @@
  *
  *  - `meta` is minted SERVER-SIDE, after the edge has validated the caller. No
  *    browser-facing input type may carry `actor` or `meta`; the browser supplies
- *    an {@link OperatorCommandInput} whose `commandId` is namespaced by actor and
- *    action before it becomes a domain idempotency key, so a client cannot
- *    assert an identity by choosing a key.
+ *    only a `commandId`, which is namespaced by actor and action before it
+ *    becomes a domain idempotency key — so a client cannot assert an identity by
+ *    choosing a key. See {@link deriveIdempotencyKey}.
  *  - No method ever throws for a domain condition. Success and typed domain
  *    errors are both {@link DomainResult} values.
  */
@@ -42,12 +42,6 @@ export interface OperatorMeta {
 export interface OperatorCall<T> {
   input: T;
   meta: OperatorMeta;
-}
-
-/** Browser-to-edge mutation shape. Never carries `actor` or `meta`. */
-export interface OperatorCommandInput<T> {
-  commandId: string;
-  input: T;
 }
 
 // ── Versioning ───────────────────────────────────────────────────────────────
@@ -180,8 +174,6 @@ export interface PutVariantInput {
   /** When a pre-order buyer should expect it. Meaningless for `stock`. */
   expectedShipAt?: number | null;
 }
-
-export type PreorderRunDTO = typeof Rpc.PreorderRun.Type;
 
 export interface AdjustStockInput {
   variantId: string;

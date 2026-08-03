@@ -365,4 +365,3 @@ export class Audit extends Context.Service<
   );
 }
 
-export type AuditService = Audit["Service"];

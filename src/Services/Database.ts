@@ -89,19 +89,6 @@ export class Database extends Context.Service<
     );
 }
 
-export type DatabaseService = Database["Service"];
-
-/**
- * Commit, treating a failed commit as a DEFECT. Every caller wants this except
- * `adjustStock`, which reads the failure as a domain condition (the
- * `stock_non_negative` CHECK firing).
- */
-export const commit = Effect.fn("Database.commit")(function* (
-  statements: readonly DbStatement[],
-) {
-  const database = yield* Database;
-  return yield* Effect.orDie(database.run(statements));
-});
 
 /** Await a classic drizzle query builder. A rejection is infrastructure, not a domain condition. */
 export const query = <A>(build: () => PromiseLike<A>): Effect.Effect<A> =>
