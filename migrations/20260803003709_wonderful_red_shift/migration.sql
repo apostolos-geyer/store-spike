@@ -1,0 +1,1 @@
+ALTER TABLE `customer_order` ADD `receipt_email` text;

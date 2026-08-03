@@ -1,0 +1,14 @@
+node_modules/
+
+# Alchemy's local state and build output.
+#
+# NOT just size (110M of bundles) — `state/` holds the RESOLVED value of every
+# `Config` the workers read, which means the Stripe secret key and the webhook
+# signing secret are in there in PLAINTEXT. Committing this directory publishes
+# them.
+.alchemy/
+
+.env
+.env.*
+!.env.example
+.DS_Store

@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM"],
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "exactOptionalPropertyTypes": false,
+    "types": ["@cloudflare/workers-types", "bun"]
+  },
+  "include": ["alchemy.run.ts", "src/**/*.ts", "test/**/*.ts", "drizzle.config.ts"]
+}
