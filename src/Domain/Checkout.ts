@@ -45,7 +45,7 @@ import { customerOrder, orderItem } from "./Schema.ts";
  * seconds both eat into it. Exactly 30 would fail intermittently, under load,
  * on the checkout path, which is the worst possible place for a flake.
  */
-export const SESSION_TTL_MS = 35 * 60_000;
+const SESSION_TTL_MS = 35 * 60_000;
 
 export interface PlaceOrderInput {
   readonly items: readonly CartItem[];
@@ -95,7 +95,7 @@ export type CheckoutError =
  * The order number a customer quotes. Derived from the id's tail rather than a
  * counter, so it needs no sequence table and no coordination.
  */
-export const orderNumberFor = (orderId: string): string => `SO-${orderId.slice(-8).toUpperCase()}`;
+const orderNumberFor = (orderId: string): string => `SO-${orderId.slice(-8).toUpperCase()}`;
 
 const orderWriteStatements = (
   db: ClassicDb,

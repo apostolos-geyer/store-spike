@@ -47,7 +47,7 @@ const TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
   cancelled: [],
 };
 
-export const canTransition = (from: OrderStatus, to: OrderStatus): boolean =>
+const canTransition = (from: OrderStatus, to: OrderStatus): boolean =>
   TRANSITIONS[from].includes(to);
 
 const toAddress = (row: {
@@ -82,7 +82,7 @@ const toAddress = (row: {
     : null;
 
 /** Load one order plus its lines, by the operator-facing number. */
-export const loadOrder = Effect.fn("Orders.loadOrder")(function* (
+const loadOrder = Effect.fn("Orders.loadOrder")(function* (
   db: ClassicDb,
   orderNumber: string,
 ) {

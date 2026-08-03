@@ -22,8 +22,17 @@ import type { Destination } from "./StripeConfig.ts";
 /** A session's lifecycle state, normalised away from any one provider's vocabulary. */
 export type SessionStatus = "open" | "complete" | "expired";
 
-/** Whether money actually moved. Separate from `status`: a session can be complete and unpaid. */
-export type PaymentStatus = "unpaid" | "paid" | "no_payment_required";
+/**
+ * Whether money actually moved. Separate from `status`: a session can be
+ * complete and unpaid.
+ *
+ * Defined in `core/` and re-exported here rather than restated, because the
+ * settlement policy decides things FROM it and this port describes things WITH
+ * it — two copies of a three-member union is exactly the kind of duplication
+ * that drifts silently once one side gains a member.
+ */
+import type { PaymentStatus } from "../core/settlement-policy.ts";
+export type { PaymentStatus };
 
 export interface Session {
   readonly id: string;

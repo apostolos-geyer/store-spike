@@ -1,0 +1,73 @@
+{
+  // This file is JSONC: fallow reads these comments; generic JSON tools may not.
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+
+  // ── ENTRY POINTS ─────────────────────────────────────────────────────────
+  //
+  // Nothing here has an `src/index.ts`. The reachability roots are the alchemy
+  // stack — which pulls in every Worker, and through them the whole domain —
+  // plus the three test tiers, because a symbol exercised only by a test is
+  // still reached.
+  //
+  // The Workers are named explicitly as well as via the stack: each is a
+  // `Cloudflare.Worker` whose bundle entry is `import.meta.url`, which is a
+  // runtime string no import graph can follow.
+  "entry": [
+    "alchemy.run.ts",
+    "drizzle.config.ts",
+    "src/Workers/*.ts",
+    "test/unit/**/*.test.ts",
+    "test/*.test.ts",
+  ],
+
+  "ignorePatterns": ["migrations/**", ".alchemy/**"],
+
+  // Mirrors the platform's own list. Both are alchemy peer dependencies pulled
+  // in transitively rather than imported here, so removing them would break a
+  // deploy that currently works.
+  "ignoreDependencies": ["@effect/platform-bun", "@effect/platform-node"],
+
+  // The gates the platform runs at `error`. Matching them here means a finding
+  // surfaces during development rather than on arrival.
+  "rules": {
+    "unused-exports": "error",
+    "unused-files": "error",
+    "unused-dependencies": "error",
+  },
+  // ── DUPLICATE EXPORT NAMES ───────────────────────────────────────────────
+  //
+  // `fallow fix` proposed blanket `["*"]` suppressions for four files. Three of
+  // those were a real defect rather than noise and are fixed instead:
+  // `PaymentStatus` was declared in BOTH `core/settlement-policy.ts` and
+  // `Services/Payments.ts` — two copies of a three-member union, which is
+  // exactly what drifts once one side gains a member. The policy owns it now
+  // and the port re-exports it.
+  //
+  // What remains is `layer`, exported by both payment adapters. That is the
+  // point of a port: two implementations of one interface answer to the same
+  // name, and `PaymentsProvider` picks between them. Suppressed narrowly.
+  "ignoreExports": [
+    { "file": "src/Services/PaymentsFake.ts", "exports": ["layer"] },
+    { "file": "src/Services/PaymentsStripe.ts", "exports": ["layer"] },
+
+    // ── TYPES THAT NAME AN EXPORTED SIGNATURE ──────────────────────────────
+    //
+    // Each of these is the return or parameter type of an exported function,
+    // inferred at every call site and therefore never imported by name.
+    // Un-exporting them does not remove surface area — it makes the surface
+    // UNNAMEABLE, which fallow itself reports as a private type leak. Its
+    // auto-fix declines to touch them for that reason, which is the tell.
+    //
+    // Listed by name rather than `["*"]` so a genuinely dead type added to one
+    // of these files still fails the gate.
+    { "file": "src/Domain/Checkout.ts", "exports": ["PlacedOrder", "CheckoutError"] },
+    { "file": "src/Domain/Deletion.ts", "exports": ["DeletionAction", "ResolvedIntent"] },
+    { "file": "src/Domain/Reconcile.ts", "exports": ["SweepResult"] },
+    { "file": "src/Domain/Settlement.ts", "exports": ["Settlement"] },
+    { "file": "src/Domain/Timeline.ts", "exports": ["TimelineEntry"] },
+    { "file": "src/Services/Blobs.ts", "exports": ["StoredBlob"] },
+    { "file": "src/Services/Database.ts", "exports": ["StatementResult"] },
+    { "file": "src/Services/PaymentsProvider.ts", "exports": ["Provider"] },
+    { "file": "src/Services/StripeConfig.ts", "exports": ["ShippingRate"] },
+  ],
+}

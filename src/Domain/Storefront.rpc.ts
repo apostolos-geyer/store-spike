@@ -37,9 +37,9 @@ export class OrderNotFound extends Schema.TaggedErrorClass<OrderNotFound>()("Ord
 }) {}
 
 /** Where a cart is going. Fixes the shipping rate and the address form. */
-export const Destination = Schema.Literals(["CA", "US"]);
+const Destination = Schema.Literals(["CA", "US"]);
 
-export const PlacedOrder = Schema.Struct({
+const PlacedOrder = Schema.Struct({
   orderNumber: Schema.String,
   /**
    * LINE ITEMS ONLY, and named so a storefront cannot mistake it for a total.
@@ -57,7 +57,7 @@ export const PlacedOrder = Schema.Struct({
 });
 
 /** What a customer may see about their own order. Never the internal id. */
-export const CustomerOrderView = Schema.Struct({
+const CustomerOrderView = Schema.Struct({
   orderNumber: Schema.String,
   status: Schema.Literals(["pending", "paid", "shipped", "delivered", "cancelled"]),
   paymentStatus: Schema.String,

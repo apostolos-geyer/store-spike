@@ -44,7 +44,7 @@ export const REVERSING: ReadonlySet<string> = new Set([
  * Anything already shipped or delivered is terminal against both classes — the
  * goods have left the building and no payment event changes that.
  */
-export const TERMINAL: ReadonlySet<string> = new Set(["shipped", "delivered"]);
+const TERMINAL: ReadonlySet<string> = new Set(["shipped", "delivered"]);
 
 /** THE PAID PREDICATE, stated once so no call site can disagree. */
 export const isPaid = (status: PaymentStatus | null): boolean =>

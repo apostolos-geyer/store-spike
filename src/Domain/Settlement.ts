@@ -54,7 +54,6 @@ export const MAX_ATTEMPTS = 5;
  * decision from the SQL that acts on it is what makes the rules enumerable
  * without a queue. Re-exported so existing callers are unchanged.
  */
-export { isPaid } from "../core/settlement-policy.ts";
 
 /**
  * WHAT A SETTLED PAYMENT TELLS US ABOUT AN ORDER, in one place.

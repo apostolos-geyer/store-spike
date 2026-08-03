@@ -205,33 +205,3 @@ export const layer = Layer.effect(
   }),
 );
 
-/**
- * Drive the fake into a state the sweep must react to. Exposed as an operator
- * method on the Commerce worker rather than a route, so it travels the same
- * binding as everything else.
- */
-export const stage = Effect.fn("PaymentsFake.stage")(function* (
-  sessionId: string,
-  patch: { status?: SessionStatus; paymentStatus?: PaymentStatus; expiresAt?: number },
-) {
-  const database = yield* Database;
-  const db = database.db;
-  const update: Record<string, unknown> = {};
-  if (patch.status !== undefined) update.status = patch.status;
-  if (patch.paymentStatus !== undefined) update.paymentStatus = patch.paymentStatus;
-  if (patch.expiresAt !== undefined) update.expiresAt = patch.expiresAt;
-  if (Object.keys(update).length === 0) return null;
-
-  yield* Effect.orDie(
-    database.run([
-      db
-        .update(fakeSession)
-        .set(update)
-        .where(eq(fakeSession.id, sessionId)) as unknown as DbStatement,
-    ]),
-  );
-  const rows = yield* query(() =>
-    db.select().from(fakeSession).where(eq(fakeSession.id, sessionId)).limit(1),
-  );
-  return rows[0] ? toSession(rows[0]) : null;
-});

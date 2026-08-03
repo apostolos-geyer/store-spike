@@ -57,7 +57,7 @@ export const VARIABLES = {
 } as const satisfies Record<StripeEnvironment, { secretKey: string; webhookSecret: string }>;
 
 /** Where the buyer returns after a hosted checkout. Origin only, no path. */
-export const STOREFRONT_URL_VARIABLE = "STORE_STOREFRONT_URL";
+const STOREFRONT_URL_VARIABLE = "STORE_STOREFRONT_URL";
 
 /** A developer's storefront, by convention. Never used outside `dev`. */
 const DEV_STOREFRONT_URL = "http://localhost:5173";
@@ -74,7 +74,7 @@ const DEV_STOREFRONT_URL = "http://localhost:5173";
  * validating against it afterwards.
  */
 export type Destination = "CA" | "US";
-export const DESTINATIONS = ["CA", "US"] as const;
+const DESTINATIONS = ["CA", "US"] as const;
 
 export interface ShippingRate {
   readonly amountCents: number;
@@ -106,13 +106,13 @@ const SHIPPING_VARIABLES: Record<Destination, string> = {
  * right for garments in Canada; a store selling something else must change it,
  * which is why it is named and configurable rather than inlined at the call.
  */
-export const GOODS_TAX_CODE_VARIABLE = "STORE_TAX_CODE_GOODS";
+const GOODS_TAX_CODE_VARIABLE = "STORE_TAX_CODE_GOODS";
 const DEFAULT_GOODS_TAX_CODE = "txcd_99999999";
 /** Shipping is itself taxable in Canada, and carries its own code. */
 export const SHIPPING_TAX_CODE = "txcd_92010001";
 
 /** Minor-unit currency all prices are quoted in. */
-export const CURRENCY_VARIABLE = "STORE_CURRENCY";
+const CURRENCY_VARIABLE = "STORE_CURRENCY";
 const DEFAULT_CURRENCY = "cad";
 
 /**
@@ -122,7 +122,7 @@ const DEFAULT_CURRENCY = "cad";
  * contributor's machine, but a live key in a preprod slot is a mistake nobody
  * should be allowed to deploy past.
  */
-export class StripeKeyMismatch extends Schema.TaggedErrorClass<StripeKeyMismatch>()(
+class StripeKeyMismatch extends Schema.TaggedErrorClass<StripeKeyMismatch>()(
   "StripeKeyMismatch",
   { environment: Schema.String, detail: Schema.String },
 ) {}

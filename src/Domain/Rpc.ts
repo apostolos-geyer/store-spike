@@ -71,7 +71,7 @@ export const ProductDraft = Schema.Struct({
   updatedAt: Schema.Number,
 });
 
-export const VariantMode = Schema.Literals(["stock", "preorder"]);
+const VariantMode = Schema.Literals(["stock", "preorder"]);
 
 export const ProductVariant = Schema.Struct({
   id: Schema.String,
@@ -96,7 +96,7 @@ export const ProductMedia = Schema.Struct({
   sha256: Schema.String,
 });
 
-export const ProductRelease = Schema.Struct({
+const ProductRelease = Schema.Struct({
   id: Schema.String,
   version: Schema.String,
   publishedAt: Schema.Number,
@@ -106,7 +106,7 @@ export const ProductRelease = Schema.Struct({
  * The manufacturing run behind a pre-order. `cap: null` means this product is
  * not sold as a pre-order; `remaining` is what a storefront should render.
  */
-export const PreorderRun = Schema.Struct({
+const PreorderRun = Schema.Struct({
   cap: Schema.NullOr(Schema.Number),
   claimed: Schema.Number,
   remaining: Schema.NullOr(Schema.Number),
@@ -136,7 +136,7 @@ export const ShippingAddress = Schema.Struct({
   phone: Schema.optional(Schema.String),
 });
 
-export const OrderLine = Schema.Struct({
+const OrderLine = Schema.Struct({
   productId: Schema.String,
   variantId: Schema.String,
   preorder: Schema.Boolean,
@@ -179,7 +179,7 @@ export const OrderDetail = Schema.Struct({
  * from what the provider REPORTED — an audit trail that conflates the two
  * cannot answer the question it exists for.
  */
-export const TimelineEntry = Schema.Struct({
+const TimelineEntry = Schema.Struct({
   at: Schema.Number,
   source: Schema.Literals(["operator", "customer", "payment"]),
   action: Schema.String,
@@ -188,7 +188,7 @@ export const TimelineEntry = Schema.Struct({
   detail: Schema.NullOr(Schema.String),
 });
 
-export const OrderSummary = Schema.Struct({
+const OrderSummary = Schema.Struct({
   orderNumber: Schema.String,
   email: Schema.String,
   shipName: Schema.NullOr(Schema.String),
@@ -356,7 +356,7 @@ export const ProviderEventPayload = Schema.Struct({
   ),
 });
 
-export const SweepResult = Schema.Struct({
+const SweepResult = Schema.Struct({
   orphansReleased: Schema.Number,
   healed: Schema.Number,
   released: Schema.Number,
@@ -365,7 +365,7 @@ export const SweepResult = Schema.Struct({
   remaining: Schema.Boolean,
 });
 
-export const SettleResult = Schema.Struct({
+const SettleResult = Schema.Struct({
   outcome: Schema.Literals(["applied", "duplicate", "ignored", "retryable", "dead"]),
   orderNumber: Schema.NullOr(Schema.String),
 });

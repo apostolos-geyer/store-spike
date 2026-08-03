@@ -33,7 +33,7 @@ import { settledColumns } from "./Settlement.ts";
 import { customerOrder, orderItem } from "./Schema.ts";
 
 /** How long an order may hold stock with no session before it is presumed abandoned. */
-export const ORPHAN_GRACE_MS = 15 * 60_000;
+const ORPHAN_GRACE_MS = 15 * 60_000;
 
 /**
  * How many orders one sweep will touch, per category.
@@ -49,7 +49,7 @@ export const ORPHAN_GRACE_MS = 15 * 60_000;
  * whether to expect more. Quarter-hourly at this size drains any realistic
  * backlog within a few runs.
  */
-export const SWEEP_LIMIT = 100;
+const SWEEP_LIMIT = 100;
 
 export interface SweepResult {
   readonly orphansReleased: number;

@@ -48,10 +48,8 @@ export interface OperatorCall<T> {
 
 /** Pure label arithmetic — see `core/versions.ts` for why it lives there. */
 export {
-  compareVersions,
   isValidVersion,
   nextVersion,
-  SEMVER_PATTERN,
 } from "../core/versions.ts";
 
 // ── Product DTOs ─────────────────────────────────────────────────────────────

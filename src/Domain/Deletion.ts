@@ -56,7 +56,7 @@ import {
 } from "./Schema.ts";
 
 /** A plan is short-lived on purpose: a stale preview is a dangerous preview. */
-export const DELETION_TTL_MS = 10 * 60 * 1000;
+const DELETION_TTL_MS = 10 * 60 * 1000;
 
 // ── Plan subjects ────────────────────────────────────────────────────────────
 
@@ -91,7 +91,7 @@ const base64url = (bytes: Uint8Array): string => {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 };
 
-export const sha256Hex = Effect.fn("Deletion.sha256Hex")(function* (input: string) {
+const sha256Hex = Effect.fn("Deletion.sha256Hex")(function* (input: string) {
   const digest = yield* Effect.promise(() =>
     crypto.subtle.digest("SHA-256", new TextEncoder().encode(input)),
   );
@@ -160,7 +160,7 @@ const ordersReferencingProduct = Effect.fn("Deletion.ordersReferencingProduct")(
 });
 
 /** The release-deletion impact, or null when the release does not exist. */
-export const deriveReleaseImpact = Effect.fn("Deletion.deriveReleaseImpact")(function* (
+const deriveReleaseImpact = Effect.fn("Deletion.deriveReleaseImpact")(function* (
   db: ClassicDb,
   subject: ReleaseSubject,
 ) {
@@ -225,7 +225,7 @@ export const deriveReleaseImpact = Effect.fn("Deletion.deriveReleaseImpact")(fun
   return { impact, isActive };
 });
 
-export const deriveProductImpact = Effect.fn("Deletion.deriveProductImpact")(function* (
+const deriveProductImpact = Effect.fn("Deletion.deriveProductImpact")(function* (
   db: ClassicDb,
   subject: ProductSubject,
 ) {
@@ -288,7 +288,7 @@ export const deriveProductImpact = Effect.fn("Deletion.deriveProductImpact")(fun
   return { impact, storageKeys: images.map((image) => image.storageKey) };
 });
 
-export const deriveVariantImpact = Effect.fn("Deletion.deriveVariantImpact")(function* (
+const deriveVariantImpact = Effect.fn("Deletion.deriveVariantImpact")(function* (
   db: ClassicDb,
   subject: VariantSubject,
 ) {
@@ -325,7 +325,7 @@ export const deriveVariantImpact = Effect.fn("Deletion.deriveVariantImpact")(fun
   return { impact };
 });
 
-export const deriveMediaImpact = Effect.fn("Deletion.deriveMediaImpact")(function* (
+const deriveMediaImpact = Effect.fn("Deletion.deriveMediaImpact")(function* (
   db: ClassicDb,
   subject: MediaSubject,
 ) {
@@ -428,7 +428,7 @@ export type ResolvedIntent<S> =
   | { readonly error: DeletionError }
   | { readonly tokenHash: string; readonly impactHash: string; readonly subject: S };
 
-export const resolveIntent = Effect.fn("Deletion.resolveIntent")(function* <S>(
+const resolveIntent = Effect.fn("Deletion.resolveIntent")(function* <S>(
   db: ClassicDb,
   token: string,
   action: DeletionAction,

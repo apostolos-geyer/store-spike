@@ -21,7 +21,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-export class BlobFailed extends Schema.TaggedErrorClass<BlobFailed>()("BlobFailed", {
+class BlobFailed extends Schema.TaggedErrorClass<BlobFailed>()("BlobFailed", {
   operation: Schema.String,
   key: Schema.String,
   message: Schema.String,

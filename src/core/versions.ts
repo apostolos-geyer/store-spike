@@ -16,7 +16,7 @@
  * build metadata. A release publishes under an operator-supplied version of
  * exactly this shape.
  */
-export const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 export const isValidVersion = (value: string): boolean => SEMVER_PATTERN.test(value);
 

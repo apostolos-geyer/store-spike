@@ -37,7 +37,7 @@ export interface StatementResult {
   readonly meta?: { readonly changes?: number };
 }
 
-export class BatchFailed extends Schema.TaggedErrorClass<BatchFailed>()("BatchFailed", {
+class BatchFailed extends Schema.TaggedErrorClass<BatchFailed>()("BatchFailed", {
   message: Schema.String,
 }) {}
 

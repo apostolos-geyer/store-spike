@@ -32,7 +32,7 @@ import {
 import { product, productImage } from "./Schema.ts";
 
 /** What the storefront and the operator console can actually display. */
-export const ALLOWED_CONTENT_TYPES = new Set([
+const ALLOWED_CONTENT_TYPES = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
@@ -40,7 +40,7 @@ export const ALLOWED_CONTENT_TYPES = new Set([
 ]);
 
 /** 10 MB. Large enough for a product photograph, small enough to bound a Worker's memory. */
-export const MAX_MEDIA_BYTES = 10 * 1024 * 1024;
+const MAX_MEDIA_BYTES = 10 * 1024 * 1024;
 
 const sha256Hex = Effect.fn("Media.sha256Hex")(function* (bytes: ArrayBuffer) {
   const digest = yield* Effect.promise(() => crypto.subtle.digest("SHA-256", bytes));

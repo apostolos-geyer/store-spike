@@ -33,7 +33,7 @@ import * as Schema from "effect/Schema";
 
 import { VARIABLES } from "../Services/StripeConfig.ts";
 
-export class StripeCliUnavailable extends Schema.TaggedErrorClass<StripeCliUnavailable>()(
+class StripeCliUnavailable extends Schema.TaggedErrorClass<StripeCliUnavailable>()(
   "StripeCliUnavailable",
   { message: Schema.String },
 ) {}
@@ -48,7 +48,7 @@ const SIGNING_SECRET = /whsec_[A-Za-z0-9]+/;
  * it means an unmapped event arriving in a test is a real signal rather than
  * noise the forwarder happened to relay.
  */
-export const FORWARDED_EVENTS = [
+const FORWARDED_EVENTS = [
   "checkout.session.completed",
   "checkout.session.expired",
   "checkout.session.async_payment_succeeded",
@@ -80,7 +80,7 @@ export const listenCommand = (webhookUrl: string): string =>
  * CLI that printed something unexpected all fail here rather than producing a
  * Worker that rejects every webhook with an opaque 400.
  */
-export const printSigningSecret = Effect.fn("StripeDev.printSigningSecret")(function* () {
+const printSigningSecret = Effect.fn("StripeDev.printSigningSecret")(function* () {
   /**
    * Spawned directly rather than through `CommandExecutor`, whose `run` wants an
    * internal plan session this call site does not have.
