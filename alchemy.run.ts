@@ -118,8 +118,21 @@ export default Alchemy.Stack(
      * deploys, so it starts the same command itself — see `stripe.e2e.test.ts`.
      */
     if (stripeArmed && environment === "dev") {
+      /**
+       * THE TRAILING SLASH IS NOT COSMETIC. `alchemy dev` formats a local worker
+       * URL WITH one (`http://localhost:1338/`) while a deployed
+       * `*.workers.dev` URL has none, so the obvious
+       * `` `${settlement.url}/webhook` `` yields `.../\/webhook` locally.
+       * Settlement matches `path !== "/webhook"` exactly, so every forwarded
+       * event 404s — the payment succeeds at Stripe and the order silently
+       * stays `pending/unpaid`, which reads as a settlement bug and is a URL
+       * bug. Deployed runs were unaffected, which is why the e2e suite never
+       * caught it.
+       */
       yield* StripeDev.forwarder(
-        Output.interpolate`${settlement.url}/webhook`,
+        Output.interpolate`${Output.map(settlement.url, (url: string | undefined) =>
+          (url ?? "").replace(/\/+$/, ""),
+        )}/webhook`,
       );
     }
 
