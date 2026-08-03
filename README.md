@@ -1,12 +1,14 @@
 # store
 
 The commerce substrate for the somewhatintelligent platform: one alchemy stack,
-five Workers, a schema-validated RPC boundary, and an integration suite that
+six Workers, a schema-validated RPC boundary, and an integration suite that
 deploys the whole thing against real Cloudflare and tears it down.
 
-The fifth is `Console` — a small TanStack SPA that binds Commerce and drives
-both sides of the store from a browser. It is the only worker here shaped like
-the platform's real frontends, and the fastest way to see the system work:
+Two of them exist to show how a frontend reaches this stack. `Console` is a
+TanStack SPA served by an Effect worker that binds Commerce; `site/worker.ts` is
+a plain `export default { fetch }` module with no Effect runtime, reaching the
+same methods through `toRpcAsync` — which is the shape the platform's storefront
+will actually take. Both are the fastest way to see the system work:
 
 ```sh
 bun alchemy dev        # builds console/dist, then serves every worker locally
@@ -50,7 +52,7 @@ ALCHEMY_PROFILE=dev bun test                 # deploy → assert → destroy
 NO_DESTROY=1 ALCHEMY_PROFILE=dev bun test    # keep the stack up between runs
 ```
 
-**Status: 153 unit and contract tests pass in ~85ms; 30/30 integration tests
+**Status: 157 unit and contract tests pass in ~85ms; 30/30 integration tests
 pass against a live deployment — 13 operator, 9 settlement, 8 end-to-end through
 Stripe itself, all green after the correctness fixes below. `tsc --noEmit` clean
 under `noUncheckedIndexedAccess`, `noUnusedLocals` and `noUnusedParameters`.**
@@ -117,6 +119,8 @@ handle — so it could not have become `core/` by renaming.
 
 ```
 alchemy.run.ts              ONE stack. Only Commerce has no address.
+site/worker.ts              a PLAIN worker — no Effect; reaches Commerce via toRpcAsync
+console/                    a TanStack SPA behind an Effect worker that binds Commerce
 src/
   core/                     ZERO IMPORTS — decisions, no I/O, no drizzle, no Effect
     pricing.ts              cart rules; what a buyer is charged

@@ -26,6 +26,7 @@
   "include": [
     "alchemy.run.ts",
     "src/**/*.ts",
+    "site/**/*.ts",
     "test/**/*.ts",
     "drizzle.config.ts"
   ]

@@ -1,5 +1,5 @@
 /**
- * ONE STACK, FIVE WORKERS.
+ * ONE STACK, SIX WORKERS.
  *
  * A stack is a state and lifecycle boundary. `Auth` in the platform repo earns
  * its own because it deploys first and publishes a routing contract to
@@ -19,6 +19,11 @@
  * holds a binding and calls Commerce as plain methods. Edge and Catalog are
  * stand-ins for consoles that live elsewhere; Console is a worked example of
  * what replaces them.
+ *
+ * Site is the OTHER half of that example, and the half that matters more for
+ * the port: a plain `export default { fetch }` module with no Effect runtime,
+ * reaching Commerce through `toRpcAsync`. The platform's storefront will be
+ * shaped like Site, not like Console.
  */
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -35,6 +40,7 @@ import { MediaBucket, StoreDatabase, StoreSchema } from "./src/Runtime.ts";
 import * as StripeConfig from "./src/Services/StripeConfig.ts";
 import { environmentFor } from "./src/Services/StripeConfig.ts";
 import CatalogWorker from "./src/Workers/Catalog.ts";
+import CommerceWorker from "./src/Workers/Commerce.ts";
 import ConsoleWorker from "./src/Workers/Console.ts";
 import EdgeWorker from "./src/Workers/Edge.ts";
 import SettlementWorker from "./src/Workers/Settlement.ts";
@@ -125,6 +131,20 @@ export default Alchemy.Stack(
     const consoleApp = yield* ConsoleWorker;
 
     /**
+     * THE NON-EFFECT WORKER, declared with the two-argument form — an id and
+     * props, with no init Effect, because there is no Effect to run.
+     *
+     * `env` rather than an Init-phase `yield*`: alchemy's docs are explicit
+     * that `env` "is the only option for async (non-Effect) Workers". This is
+     * the shape the platform's real storefront takes, so it is worth having one
+     * of them here rather than assuming it composes.
+     */
+    const site = yield* Cloudflare.Worker("Site", {
+      main: "site/worker.ts",
+      env: { COMMERCE: CommerceWorker },
+    });
+
+    /**
      * The forwarder, pointed at the address the provider will actually use.
      *
      * `Command.Dev` runs under `alchemy dev` and is a no-op under
@@ -165,6 +185,8 @@ export default Alchemy.Stack(
       catalogUrl: catalog.url.as<string>(),
       edgeUrl: edge.url.as<string>(),
       settlementUrl: settlement.url.as<string>(),
+      /** The plain-worker storefront — see `site/worker.ts`. */
+      siteUrl: site.url.as<string>(),
       /** Where to click. Operator page and storefront both live here. */
       consoleUrl: consoleApp.url.as<string>(),
     };

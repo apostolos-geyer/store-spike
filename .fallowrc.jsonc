@@ -24,6 +24,7 @@
     "src/Workers/*.ts",
     "test/unit/**/*.test.ts",
     "test/*.test.ts",
+    "site/worker.ts",
     "console/src/main.tsx",
     "console/vite.config.ts",
   ],
