@@ -78,6 +78,28 @@ export const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 export const isValidVersion = (value: string): boolean => SEMVER_PATTERN.test(value);
 
+/**
+ * The next version for a product, derived from what it has already published.
+ *
+ * A VERSION IS A LABEL, NOT AN INPUT. It exists so a release has something
+ * human to point at — "v3 of this shirt" — and that is the whole job. Requiring
+ * the operator to invent one made a decorative idea load-bearing on the write
+ * path: fixing a typo meant choosing a number, and reusing one refused the
+ * publish outright.
+ *
+ * So it is derived by default. Bumping the MINOR keeps the shape recognisably
+ * semver without pretending these numbers carry compatibility meaning — they
+ * describe a garment, not an API.
+ */
+export const nextVersion = (published: readonly string[]): string => {
+  let highest = 0;
+  for (const version of published) {
+    const minor = Number(version.split(".")[1] ?? 0);
+    if (Number.isFinite(minor) && minor > highest) highest = minor;
+  }
+  return published.length === 0 ? "1.0.0" : `1.${highest + 1}.0`;
+};
+
 /** Compare two core SemVers. Returns <0, 0, or >0. */
 export const compareVersions = (a: string, b: string): number => {
   const left = a.split(".").map(Number);
@@ -330,7 +352,11 @@ export interface SaveProductDraftInput {
 export interface PublishProductInput {
   productId: string;
   expectedRevision: number;
-  version: string;
+  /**
+   * Optional. Omit it and the next one is derived — see {@link nextVersion}.
+   * Supply it only when you actually want to name a release something specific.
+   */
+  version?: string;
 }
 
 export interface PutVariantInput {

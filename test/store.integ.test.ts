@@ -162,7 +162,6 @@ const publishedProduct = (url: string, slug: string, priceCents = 4500) =>
         commandId: cmd("publish"),
         productId: created.productId,
         expectedRevision: 1,
-        version: "1.0.0",
       });
       return {
         productId: created.productId,
@@ -550,6 +549,81 @@ test(
     // And nothing was created — the product does not exist.
     const listed = yield* withClient(edgeUrl, (client) => client.listProducts({ limit: 100 }));
     expect(listed.products.map((p) => p.slug)).not.toContain(slugFor("negative-price"));
+  }),
+  { timeout: TEST_TIMEOUT },
+);
+
+test(
+  "K · publishing needs no version, and republishing derives the next one",
+  Effect.gen(function* () {
+    const { edgeUrl } = yield* stack;
+    const slug = slugFor("unversioned");
+
+    /**
+     * A VERSION IS A LABEL, NOT AN INPUT. Requiring one made a decorative idea
+     * load-bearing: fixing a typo meant inventing a number, and reusing one
+     * refused the publish outright. Publishing without one is the normal path.
+     */
+    const product = yield* publishedProduct(edgeUrl, slug);
+    const first = yield* withClient(edgeUrl, (client) =>
+      client.getProduct({ productId: product.productId }),
+    );
+    expect(first.draft.activeVersion).toBe("1.0.0");
+
+    // Edit and republish — again naming nothing.
+    const second = yield* withClient(edgeUrl, (client) =>
+      Effect.gen(function* () {
+        yield* client.saveProductDraft({
+          commandId: cmd("edit"),
+          productId: product.productId,
+          expectedRevision: 1,
+          title: "Corrected title",
+        });
+        return yield* client.publishProduct({
+          commandId: cmd("republish"),
+          productId: product.productId,
+          expectedRevision: 2,
+        });
+      }),
+    );
+    show("K · derived versions", { first: "1.0.0", second: second.version });
+
+    // Derived, distinct, and monotonic — no collision to hand back to the caller.
+    expect(second.version).toBe("1.1.0");
+
+    const detail = yield* withClient(edgeUrl, (client) =>
+      client.getProduct({ productId: product.productId }),
+    );
+    expect(detail.draft.activeVersion).toBe("1.1.0");
+    expect(detail.releases).toHaveLength(2);
+
+    /**
+     * Naming one explicitly still works, and a name already taken is still
+     * refused — the constraint did not go away, it just stopped being something
+     * you have to think about.
+     */
+    const clash = yield* Effect.result(
+      withClient(edgeUrl, (client) =>
+        Effect.gen(function* () {
+          yield* client.saveProductDraft({
+            commandId: cmd("edit2"),
+            productId: product.productId,
+            expectedRevision: 2,
+            title: "Third",
+          });
+          return yield* client.publishProduct({
+            commandId: cmd("clash"),
+            productId: product.productId,
+            expectedRevision: 3,
+            version: "1.0.0",
+          });
+        }),
+      ),
+    );
+    expect(clash._tag).toBe("Failure");
+    if (clash._tag === "Failure") {
+      expect(clash.failure._tag).toBe("PublishRefused");
+    }
   }),
   { timeout: TEST_TIMEOUT },
 );

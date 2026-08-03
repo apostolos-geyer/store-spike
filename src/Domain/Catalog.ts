@@ -28,6 +28,7 @@ import type { CoreOutcome } from "../Services/Audit.ts";
 import {
   err,
   isValidVersion,
+  nextVersion,
   mediaHref,
   ok,
   type CreateProductInput,
@@ -425,21 +426,32 @@ export const publishProduct = Effect.fn("Catalog.publishProduct")(function* (
   const row = rows[0];
   if (!row) return { failure: err("not_found") };
   if (row.revision !== input.expectedRevision) return { failure: err("revision_conflict") };
-  if (!isValidVersion(input.version)) return { failure: err("invalid_version") };
 
-  const duplicate = yield* query(() =>
+  /**
+   * DERIVED unless the operator insists on a name.
+   *
+   * The version is a label for humans to point at, so making it a required input
+   * turned every typo fix into "what number is this". Publishing without one is
+   * the normal path; supplying one is for the rare release you want to call
+   * something specific, and only then can it be rejected.
+   */
+  const existing = yield* query(() =>
     db
-      .select({ id: productRelease.id })
+      .select({ version: productRelease.version })
       .from(productRelease)
-      .where(
-        and(
-          eq(productRelease.productId, input.productId),
-          eq(productRelease.version, input.version),
-        ),
-      )
-      .limit(1),
+      .where(eq(productRelease.productId, input.productId)),
   );
-  if (duplicate[0]) return { failure: err("version_exists") };
+
+  if (input.version !== undefined && !isValidVersion(input.version)) {
+    return { failure: err("invalid_version") };
+  }
+  const version = input.version ?? nextVersion(existing.map((release) => release.version));
+
+  // UNIQUE(product_id, version) still holds, so a name that is already taken is
+  // refused rather than aborting the batch on a constraint violation.
+  if (existing.some((release) => release.version === version)) {
+    return { failure: err("version_exists") };
+  }
 
   const images = yield* query(() =>
     db
@@ -468,7 +480,7 @@ export const publishProduct = Effect.fn("Catalog.publishProduct")(function* (
       db.insert(productRelease).values({
         id: releaseId,
         productId: input.productId,
-        version: input.version,
+        version,
         slug: row.slug,
         title: row.title,
         descriptionMarkdown: row.descriptionMarkdown,
@@ -491,11 +503,11 @@ export const publishProduct = Effect.fn("Catalog.publishProduct")(function* (
         .set({ activeReleaseId: releaseId, status: "active", updatedAt: now })
         .where(eq(product.id, input.productId)) as unknown as DbStatement,
     ],
-    response: ok({ releaseId, version: input.version, publishedAt: now }),
+    response: ok({ releaseId, version, publishedAt: now }),
     facts: {
       targetType: "product",
       targetId: input.productId,
-      detail: { version: input.version, imageCount: images.length },
+      detail: { version, imageCount: images.length },
     },
   };
 });

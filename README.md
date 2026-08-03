@@ -14,7 +14,7 @@ ALCHEMY_PROFILE=dev bun test                 # deploy → assert → destroy
 NO_DESTROY=1 ALCHEMY_PROFILE=dev bun test    # keep the stack up between runs
 ```
 
-**Status: 26/26 integration tests pass against a live deployment — 10 operator,
+**Status: 27/27 integration tests pass against a live deployment — 11 operator,
 9 settlement, 7 end-to-end through Stripe itself. `tsc --noEmit` clean, verified
 from a destroyed stack on a single cold run.**
 

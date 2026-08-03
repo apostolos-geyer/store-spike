@@ -411,7 +411,11 @@ export class OperatorRpcs extends RpcGroup.make(
     payload: call({
       productId: Schema.String,
       expectedRevision: Schema.Int,
-      version: Schema.String,
+      /**
+       * OPTIONAL. Omit it and the server derives the next one — the version is a
+       * label for humans, not a key the caller has to invent on every publish.
+       */
+      version: Schema.optional(Schema.String),
     }),
     success: Schema.Struct({
       releaseId: Schema.String,
