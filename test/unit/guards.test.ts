@@ -9,7 +9,7 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { classifyGuards, type GuardResult } from "../../src/core/guards.ts";
+import { classifyGuards, guardWon, type GuardResult } from "../../src/core/guards.ts";
 import type { OrderLine, RunClaim } from "../../src/core/pricing.ts";
 
 const lineOf = (variantId: string, productId: string, preorder = false): OrderLine => ({
@@ -28,6 +28,32 @@ const claimOf = (productId: string): RunClaim => ({ productId, title: "Item", qu
 /** A D1 statement result for a guard that matched, or did not. */
 const won: GuardResult = { meta: { changes: 1 } };
 const lost: GuardResult = { meta: { changes: 0 } };
+
+/**
+ * `guardWon` now arbitrates the IDEMPOTENCY CLAIM as well as the stock guards.
+ * The claim used to report its loss as a constraint violation carrying driver
+ * prose, recognised by regex; it is now an `ON CONFLICT DO NOTHING` insert whose
+ * loss is a zero-row result. Everything below is what "lost" has to mean.
+ */
+describe("guardWon", () => {
+  test("exactly one row is the only win", () => {
+    expect(guardWon({ meta: { changes: 1 } })).toBe(true);
+  });
+
+  test("zero rows is a loss — the predicate did not match", () => {
+    expect(guardWon({ meta: { changes: 0 } })).toBe(false);
+  });
+
+  test("more than one row is a loss — the statement was not what we think", () => {
+    expect(guardWon({ meta: { changes: 2 } })).toBe(false);
+  });
+
+  test("absent metadata fails closed", () => {
+    expect(guardWon({})).toBe(false);
+    expect(guardWon({ meta: {} })).toBe(false);
+    expect(guardWon(undefined)).toBe(false);
+  });
+});
 
 describe("line guards", () => {
   const lines = [lineOf("v1", "p1"), lineOf("v2", "p1"), lineOf("v3", "p1")];

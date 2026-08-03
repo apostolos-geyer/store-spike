@@ -218,22 +218,45 @@ export class Audit extends Context.Service<
         const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
         const eventId = yield* ids.next();
 
-        const claim = db.insert(commandEvent).values({
-          id: eventId,
-          actorSub: call.meta.actor.sub,
-          actorEmail: call.meta.actor.email,
-          action,
-          targetType: "pending",
-          targetId: "pending",
-          requestId: call.meta.requestId,
-          idempotencyKey: call.meta.idempotencyKey,
-          outcome: "pending",
-          detailJson: null,
-          // Null until the command completes — this is what `recorded` reads to
-          // tell a claim from a completion.
-          responseJson: null,
-          createdAt: now,
-        }) as unknown as DbStatement;
+        /**
+         * ON CONFLICT DO NOTHING, so losing the claim is a VALUE, not a throw.
+         *
+         * The core is required to put this in the first batch it commits, which
+         * is what makes the unique index arbitrate that core's own mutation
+         * rather than a later one. But a raw insert reports its loss as a
+         * constraint violation — an exception carrying driver prose, which the
+         * only caller then had to recognise by regex to tell "another request
+         * holds this key" from "the database is broken".
+         *
+         * `DO NOTHING` turns that into `meta.changes === 0`: the same signal
+         * every other conditional write in this codebase already uses, and one
+         * no dependency bump can reword.
+         *
+         * The batch no longer aborts on a lost claim, so the core is responsible
+         * for unwinding whatever committed beside it. `Checkout.placeOrder` does
+         * that with the compensation path it already had.
+         */
+        const claim = db
+          .insert(commandEvent)
+          .values({
+            id: eventId,
+            actorSub: call.meta.actor.sub,
+            actorEmail: call.meta.actor.email,
+            action,
+            targetType: "pending",
+            targetId: "pending",
+            requestId: call.meta.requestId,
+            idempotencyKey: call.meta.idempotencyKey,
+            outcome: "pending",
+            detailJson: null,
+            // Null until the command completes — this is what `recorded` reads to
+            // tell a claim from a completion.
+            responseJson: null,
+            createdAt: now,
+          })
+          .onConflictDoNothing({
+            target: [commandEvent.idempotencyKey, commandEvent.action],
+          }) as unknown as DbStatement;
 
         const outcome = yield* core(claim);
 

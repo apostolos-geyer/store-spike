@@ -22,6 +22,7 @@ import type { Destination } from "../Services/StripeConfig.ts";
 import { err, ok } from "./Contracts.ts";
 import {
   classifyGuards,
+  guardWon,
   compensateStatement,
   compensateRunStatement,
   computeTotals,
@@ -123,6 +124,24 @@ const orderWriteStatements = (
      * with. The settlement path fills all three from the paid event.
      */
     shipCountry: input.destination,
+    /**
+     * BORN RELEASED, and cleared only once the reservation is known good.
+     *
+     * `releaseStatements` guards every restore on this marker being null, so
+     * setting it here means the sweep can restore NOTHING for this order until
+     * classification clears it. That closes the window this batch opens: the
+     * guards and the order rows commit TOGETHER, including a line whose guard
+     * matched nothing, so a process that dies before compensation runs would
+     * otherwise leave the orphan sweep restoring stock for every `order_item`
+     * row — including lines that never decremented.
+     *
+     * The failure mode that fixes is the expensive direction. Restoring a line
+     * that never reserved INVENTS inventory: units that do not physically exist,
+     * sold to a buyer who can never be shipped. Leaving a winner's decrement
+     * stranded instead understates stock, which an operator can see and correct
+     * with `adjustStock`. Understating is recoverable; overstating is not.
+     */
+    stockReleasedAt: now,
     createdAt: now,
     updatedAt: now,
   }) as unknown as DbStatement,
@@ -217,15 +236,27 @@ export const placeOrder = Effect.fn("Checkout.placeOrder")(function* (
   const claims = runClaims(totals.lines);
 
   /**
-   * NOT `orDie` — the unique index is a CONTROL PATH here, not a crash.
+   * THE CLAIM IS A GUARD LIKE ANY OTHER, and it is read the same way.
    *
-   * The claim shares this batch with the guards precisely so a concurrent
-   * duplicate loses on the index, which means D1 answers with a constraint
-   * violation and rolls the whole batch back: no reservation, no order rows,
-   * nothing to compensate. That is the mechanism working, so it has to become a
-   * domain result rather than a 500 on the losing tap of a double-clicked Buy.
+   * The claim shares this batch with the stock guards precisely so a concurrent
+   * duplicate loses to the unique index rather than reserving twice. That is a
+   * CONTROL PATH, not a crash — so it must not arrive as an exception. An
+   * `ON CONFLICT DO NOTHING` claim reports its loss the way every other
+   * conditional write here does: `meta.changes === 0`.
+   *
+   * This replaces a regex over D1's error text
+   * (`/UNIQUE constraint failed: command_event/`). Matching a driver's prose to
+   * decide control flow means a wording change in drizzle or D1 turns the losing
+   * tap of a double-clicked Buy into a 500 — on the money path, silently, at the
+   * next dependency bump.
+   *
+   * The trade is real and worth naming: a constraint violation used to abort the
+   * batch and roll everything back, so there was nothing to compensate. `DO
+   * NOTHING` lets the batch commit, so the loser now unwinds explicitly — using
+   * the same compensation the lost-stock-guard path already runs, and covered by
+   * the same release marker.
    */
-  const committed = yield* Effect.result(
+  const results = yield* Effect.orDie(
     database.run([
       claim,
       ...totals.lines.map((line) => guardStatement(db, line)),
@@ -243,15 +274,24 @@ export const placeOrder = Effect.fn("Checkout.placeOrder")(function* (
       ),
     ]),
   );
-  if (committed._tag === "Failure") {
-    const detail = String(committed.failure.message ?? committed.failure);
-    // Anything else is a real infrastructure failure and must still crash.
-    if (!/UNIQUE constraint failed: command_event/i.test(detail)) {
-      return yield* Effect.die(committed.failure);
-    }
+
+  /**
+   * The claim occupies the FIRST slot. Losing it means another request with this
+   * command id already holds the ledger row, so this one reserved nothing it may
+   * keep — hand back every guard that won and delete the order rows that
+   * committed beside them.
+   */
+  if (!guardWon(results[0])) {
+    const all = classifyGuards(totals.lines, claims, results.slice(1));
+    yield* Effect.orDie(
+      database.run([
+        ...all.succeeded.map((line) => compensateStatement(db, line)),
+        ...all.claimed.map((claim) => compensateRunStatement(db, claim)),
+        ...orderRollbackStatements(db, orderId),
+      ]),
+    );
     return { failure: err("in_progress") };
   }
-  const results = committed.success;
 
   /**
    * The claim occupies the FIRST slot, so the guard results start one later.
@@ -292,6 +332,34 @@ export const placeOrder = Effect.fn("Checkout.placeOrder")(function* (
           ),
         };
   }
+
+  /**
+   * EVERY GUARD WON, so this order's lines really do hold the stock their rows
+   * claim — hand it over to the sweep by clearing the release marker.
+   *
+   * Until this commits the order is BORN RELEASED (see `orderWriteStatements`)
+   * and the sweep can restore nothing for it. That covers the one window that
+   * matters: batch 1 commits the guards AND the order rows together, including
+   * a line whose guard matched nothing, so a process that dies before
+   * compensation runs would otherwise leave the sweep restoring stock for lines
+   * that never decremented — inventing inventory that does not exist.
+   *
+   * Cleared HERE rather than alongside the session, because the orphan the
+   * `payments_unavailable` path leaves behind is a legitimate reservation the
+   * sweep is supposed to release. Deferring the clear until after the provider
+   * call would strand that stock instead.
+   *
+   * The compensation branch above never reaches this: it deletes the order rows
+   * outright, so there is nothing left to release.
+   */
+  yield* Effect.orDie(
+    database.run([
+      db
+        .update(customerOrder)
+        .set({ stockReleasedAt: null })
+        .where(eq(customerOrder.id, orderId)) as unknown as DbStatement,
+    ]),
+  );
 
   /**
    * Stock is held; attach a session. A failure here leaves an ORPHAN on

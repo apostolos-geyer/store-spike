@@ -26,6 +26,20 @@ export interface GuardResult {
   readonly meta?: { readonly changes?: number };
 }
 
+/**
+ * Did a conditional write actually take?
+ *
+ * EXACTLY ONE ROW. A guard is a compare-and-set against a single row by primary
+ * key, so anything other than 1 — zero because the predicate did not match,
+ * more because the statement was not what the caller believes — means the write
+ * did not do its job. Absent metadata reads as a loss, which fails closed.
+ *
+ * Stated once so the claim, the stock guards and the run guards cannot disagree
+ * about what winning means.
+ */
+export const guardWon = (result: GuardResult | undefined): boolean =>
+  (result?.meta?.changes ?? 0) === 1;
+
 export interface GuardClassification {
   succeeded: OrderLine[];
   firstFailing: OrderLine | undefined;
@@ -38,8 +52,6 @@ export const classifyGuards = (
   claims: readonly RunClaim[],
   results: readonly GuardResult[],
 ): GuardClassification => {
-  const won = (result: GuardResult | undefined) => (result?.meta?.changes ?? 0) === 1;
-
   /**
    * ITERATE THE GUARDS, INDEX THE RESULTS — not the other way round.
    *
@@ -53,7 +65,7 @@ export const classifyGuards = (
   const succeeded: OrderLine[] = [];
   let firstFailing: OrderLine | undefined;
   lines.forEach((line, index) => {
-    if (won(results[index])) succeeded.push(line);
+    if (guardWon(results[index])) succeeded.push(line);
     else if (!firstFailing) firstFailing = line;
   });
 
@@ -64,7 +76,7 @@ export const classifyGuards = (
   const claimed: RunClaim[] = [];
   let firstFullRun: RunClaim | undefined;
   claims.forEach((claim, index) => {
-    if (won(results[lines.length + index])) claimed.push(claim);
+    if (guardWon(results[lines.length + index])) claimed.push(claim);
     else if (!firstFullRun) firstFullRun = claim;
   });
 

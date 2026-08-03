@@ -45,7 +45,7 @@ export {
   type RunClaim,
   type Totals,
 } from "../core/pricing.ts";
-export { classifyGuards, type GuardResult } from "../core/guards.ts";
+export { classifyGuards, guardWon, type GuardResult } from "../core/guards.ts";
 
 /**
  * Load the authoritative pricing inputs: live size and stock from the variant
