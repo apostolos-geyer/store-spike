@@ -14,12 +14,12 @@ ALCHEMY_PROFILE=dev bun test                 # deploy → assert → destroy
 NO_DESTROY=1 ALCHEMY_PROFILE=dev bun test    # keep the stack up between runs
 ```
 
-**Status: 29/29 integration tests pass against a live deployment — 13 operator,
-9 settlement, 7 end-to-end through Stripe itself. `tsc --noEmit` clean, verified
+**Status: 30/30 integration tests pass against a live deployment — 13 operator,
+9 settlement, 8 end-to-end through Stripe itself. `tsc --noEmit` clean, verified
 from a destroyed stack on a single cold run.**
 
 An adversarial review pass raised 22 findings; 19 survived independent
-refutation. Fifteen are fixed, **four remain open** — read
+refutation. Sixteen are fixed, **three remain open** — read
 [REVIEW.md](./REVIEW.md) before shipping this. Five of the six review lenses hit
 their finding cap, so that register is a floor, not a ceiling.
 

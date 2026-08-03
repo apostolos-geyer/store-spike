@@ -89,7 +89,17 @@ export default Alchemy.Stack(
       );
     }
 
+    const database = yield* StoreDatabase;
+
     return {
+      /**
+       * The physical D1 name. Exported so an integration test can ARRANGE state
+       * the public surface cannot reach — an order already attached to a settled
+       * session, say — and then exercise the real code path against it. Reading
+       * and writing the same database the Workers use keeps that honest: nothing
+       * is mocked, only set up.
+       */
+      databaseName: database.databaseName,
       catalogUrl: catalog.url.as<string>(),
       edgeUrl: edge.url.as<string>(),
       settlementUrl: settlement.url.as<string>(),

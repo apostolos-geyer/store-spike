@@ -29,6 +29,7 @@ import * as Effect from "effect/Effect";
 import { Database, query, type DbStatement } from "../Services/Database.ts";
 import { Payments } from "../Services/Payments.ts";
 import { releaseStatements } from "./Reservations.ts";
+import { settledColumns } from "./Settlement.ts";
 import { customerOrder, orderItem } from "./Schema.ts";
 
 /** How long an order may hold stock with no session before it is presumed abandoned. */
@@ -167,11 +168,42 @@ export const sweep = Effect.fn("Reconcile.sweep")(function* (): Effect.fn.Return
       session.status === "complete" &&
       (session.paymentStatus === "paid" || session.paymentStatus === "no_payment_required")
     ) {
+      /**
+       * THE SAME COLUMNS THE WEBHOOK WOULD HAVE WRITTEN, through the same
+       * builder.
+       *
+       * This branch exists because the event never arrived, so it is the ONLY
+       * record this order will get. Writing `status = 'paid'` alone left the
+       * amounts at their zero defaults — an order the schema's own rule says to
+       * read `totalCents` from, reporting a sale of nothing — with no address to
+       * ship to and, worst of all, no payment intent, which is the only join a
+       * later refund or dispute has back to it.
+       *
+       * The session was retrieved BY THIS ORDER'S OWN session id, so unlike the
+       * webhook path there is no question of whose session it describes.
+       */
       yield* Effect.orDie(
         database.run([
           db
             .update(customerOrder)
-            .set({ status: "paid", paymentStatus: "paid", updatedAt: now })
+            .set({
+              status: "paid",
+              paymentStatus: "paid",
+              ...settledColumns({
+                paymentIntentId: session.paymentIntentId,
+                shipCountry: session.shipping ? null : null,
+                email: session.email,
+                amounts: {
+                  subtotalCents: session.amountSubtotalCents,
+                  shippingCents: session.amountShippingCents,
+                  taxCents: session.amountTaxCents,
+                  totalCents: session.amountTotalCents,
+                  currency: session.currency,
+                },
+                shipping: session.shipping,
+              }),
+              updatedAt: now,
+            })
             .where(eq(customerOrder.id, order.id)) as unknown as DbStatement,
         ]),
       );

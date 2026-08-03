@@ -39,6 +39,7 @@ import { OperatorRpcs } from "../src/Domain/Rpc.ts";
 import { CartRefused, StorefrontRpcs } from "../src/Domain/Storefront.rpc.ts";
 import { listenCommand } from "../src/Infrastructure/StripeDev.ts";
 import { awaitStackReady } from "./Ready.ts";
+import { inspect, seed } from "./Seed.ts";
 import Stack from "../alchemy.run.ts";
 
 const { test, beforeAll, deploy } = Test.make({
@@ -868,6 +869,92 @@ test.skipIf(!STRIPE_READY)(
 
     // Per-variant stock never ran out — the run is what stopped the sale.
     expect(yield* stockOf(edgeUrl, productId, large)).toBe(49);
+  }),
+  { timeout: TEST_TIMEOUT },
+);
+
+test.skipIf(!STRIPE_READY)(
+  "E8 · the reconcile heal records what was charged, not just that it was paid",
+  Effect.gen(function* () {
+    const { edgeUrl, catalogUrl, databaseName } = yield* stack;
+
+    const { variantId } = yield* stockedProduct(edgeUrl, 5);
+    const placed = yield* withShopper(catalogUrl, (client) =>
+      client.placeOrder({
+        commandId: cmd("heal"),
+        email: `heal-${RUN}@spike.local`,
+        destination: "CA",
+        items: [{ variantId, quantity: 1 }],
+      }),
+    );
+
+    /**
+     * A REAL settled session, from the real API. `stripe trigger` confirms a
+     * test-mode payment, so this session is genuinely `complete` and `paid` with
+     * real amounts and a real payment intent behind it — exactly what
+     * `payments.retrieve` will report.
+     */
+    yield* trigger("checkout.session.completed", null);
+    const settled = yield* Effect.promise(async () => {
+      const child = Bun.spawn(["stripe", "checkout", "sessions", "list", "--limit", "1"], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [out] = await Promise.all([new Response(child.stdout).text(), child.exited]);
+      return (JSON.parse(out) as { data: Array<{ id: string }> }).data[0]!;
+    });
+
+    /**
+     * THE ONE THING THAT IS ARRANGED: attach that session to our order and push
+     * its expiry into the past. This is the state a LOST WEBHOOK leaves behind —
+     * the buyer paid, the event never landed, and the sweep is the backstop that
+     * is supposed to notice. There is no way to reach it from the public surface,
+     * because there is no way to pay a checkout session from a script.
+     *
+     * Everything after this line is real.
+     */
+    yield* seed(
+      databaseName,
+      "update customer_order set session_id = ?, session_expires_at = ? where order_number = ?",
+      [settled.id, Date.parse("2020-01-01T00:00:00Z"), placed.orderNumber],
+    );
+
+    const swept = yield* withOperator(edgeUrl, (client) => client.runSweep({}));
+    show("E8 · sweep", swept);
+    expect(swept.healed).toBe(1);
+
+    const healed = yield* withOperator(edgeUrl, (client) =>
+      client.getOrder({ orderNumber: placed.orderNumber }),
+    );
+    show("E8 · healed order", {
+      status: healed.status,
+      totalCents: healed.totalCents,
+      currency: healed.currency,
+    });
+
+    // The label, which the heal already wrote.
+    expect(healed.status).toBe("paid");
+    expect(healed.paymentStatus).toBe("paid");
+
+    /**
+     * AND THE MONEY. A healed order that says `paid` with a total of zero is
+     * worse than one still marked pending: every revenue and tax report reads it
+     * as a sale of nothing, and the schema's own rule says to read `totalCents`
+     * once an order is paid.
+     */
+    expect(healed.totalCents).toBeGreaterThan(0);
+
+    /**
+     * AND THE CHARGE. Without the payment intent there is NO join from a later
+     * refund or dispute back to this order — charge events carry no session and
+     * no metadata — so the money could go back and nothing here would know.
+     */
+    const [row] = yield* inspect<{ payment_intent_id: string | null }>(
+      databaseName,
+      "select payment_intent_id from customer_order where order_number = ?",
+      [placed.orderNumber],
+    );
+    expect(row?.payment_intent_id).toBeTruthy();
   }),
   { timeout: TEST_TIMEOUT },
 );

@@ -77,6 +77,62 @@ export const isPaid = (status: PaymentStatus | null): boolean =>
  */
 const TERMINAL = new Set(["shipped", "delivered"]);
 
+/**
+ * WHAT A SETTLED PAYMENT TELLS US ABOUT AN ORDER, in one place.
+ *
+ * Two paths learn an order was paid: the webhook, and the reconcile sweep when
+ * that webhook never arrived. They must record the SAME things — the sweep
+ * existed as a backstop, and a backstop that writes only `status = 'paid'`
+ * produces an order with a zero total, no address, and no payment intent, which
+ * is worse than one still marked pending. Sharing this builder is what stops the
+ * two drifting.
+ *
+ * Shaped from a `Session` rather than an event so both callers can use it: the
+ * webhook has a compacted event, the sweep has the session it just retrieved.
+ */
+export const settledColumns = (paid: {
+  readonly paymentIntentId: string | null;
+  readonly shipCountry: string | null;
+  readonly email: string | null;
+  readonly amounts: {
+    readonly subtotalCents: number;
+    readonly shippingCents: number;
+    readonly taxCents: number;
+    readonly totalCents: number;
+    readonly currency: string;
+  } | null;
+  readonly shipping: ProviderEvent["shipping"];
+}) => ({
+  ...(paid.paymentIntentId ? { paymentIntentId: paid.paymentIntentId } : {}),
+  ...(paid.shipCountry ? { shipCountry: paid.shipCountry } : {}),
+  /**
+   * The buyer's own address is the LOOKUP KEY and is never overwritten; what
+   * they typed on the payment page is recorded beside it.
+   */
+  ...(paid.email ? { receiptEmail: paid.email } : {}),
+  ...(paid.amounts
+    ? {
+        subtotalCents: paid.amounts.subtotalCents,
+        shippingCents: paid.amounts.shippingCents,
+        taxCents: paid.amounts.taxCents,
+        totalCents: paid.amounts.totalCents,
+        currency: paid.amounts.currency,
+      }
+    : {}),
+  /** All-or-nothing, to respect `ship_address_atomic`. */
+  ...(paid.shipping
+    ? {
+        shipName: paid.shipping.name,
+        shipLine1: paid.shipping.line1,
+        shipLine2: paid.shipping.line2,
+        shipCity: paid.shipping.city,
+        shipRegion: paid.shipping.region,
+        shipPostal: paid.shipping.postal,
+        shipPhone: paid.shipping.phone,
+      }
+    : {}),
+});
+
 export interface Settlement {
   readonly outcome: Outcome;
   readonly orderNumber: string | null;
@@ -377,39 +433,13 @@ export const settle = Effect.fn("Settlement.settle")(function* (
      * when a store's books disagree with its processor, the processor is right.
      */
     const collected = describesOurSession
-      ? {
-          ...(event.paymentIntentId ? { paymentIntentId: event.paymentIntentId } : {}),
-          ...(event.shipCountry ? { shipCountry: event.shipCountry } : {}),
-          /**
-           * The buyer's own address is the LOOKUP KEY and is never overwritten;
-           * what they typed on the payment page is recorded beside it. Replacing
-           * it would lock them out of the order they just placed.
-           */
-          ...(event.email ? { receiptEmail: event.email } : {}),
-          ...(event.amounts
-            ? {
-                subtotalCents: event.amounts.subtotalCents,
-                shippingCents: event.amounts.shippingCents,
-                taxCents: event.amounts.taxCents,
-                totalCents: event.amounts.totalCents,
-                currency: event.amounts.currency,
-              }
-            : {}),
-          /**
-           * The address, all-or-nothing, to respect `ship_address_atomic`.
-           */
-          ...(event.shipping
-            ? {
-                shipName: event.shipping.name,
-                shipLine1: event.shipping.line1,
-                shipLine2: event.shipping.line2,
-                shipCity: event.shipping.city,
-                shipRegion: event.shipping.region,
-                shipPostal: event.shipping.postal,
-                shipPhone: event.shipping.phone,
-              }
-            : {}),
-        }
+      ? settledColumns({
+          paymentIntentId: event.paymentIntentId,
+          shipCountry: event.shipCountry,
+          email: event.email,
+          amounts: event.amounts,
+          shipping: event.shipping,
+        })
       : {};
 
     yield* Effect.orDie(

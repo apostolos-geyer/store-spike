@@ -250,7 +250,7 @@ The concurrency variant also holds: two same-key requests both miss `recorded()`
 Why I downgrade from critical: `src/Domain/Checkout.ts:240-245` explicitly designs for the orphan, and `src/Domain/Reconcile.ts:82-99` does find it — `sessionId IS NULL AND status='pending' AND createdAt < now-15min` — and `release()` restores both `stock` and `preorder_claimed`. The loser's unreachable Stripe session cannot be paid (its URL is never returned), so there is no oversell and no lost charge. The damage is bounded to transient inventory depletion of up to ~30 minutes (15 min grace + 15 min cron at `src/Workers/Settlement.ts:45`) during a payments outage, plus a 500 on a concurrent double-click. Real, and the prose at `src/Domain/Checkout.ts:143-144`, `src/Services/Audit.ts:11-13` and `src/Domain/Reservations.ts:21-22` is genuinely false — but self-healing, so medium.
 
 
-### O5. The reconcile heal marks an order paid without copying the charged amounts or the payment intent
+### O5. The reconcile heal marks an order paid without copying the charged amounts or the payment intent — **FIXED**
 
 **MEDIUM** · `src/Domain/Reconcile.ts:145` · lens `?` · reviewer confidence `high`
 
