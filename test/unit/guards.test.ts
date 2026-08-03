@@ -1,0 +1,138 @@
+/**
+ * Reading a batch result.
+ *
+ * The coupling under test is the one the comments call load-bearing: line
+ * guards come first, run guards immediately after, and `classifyGuards` reads
+ * them POSITIONALLY because positional correspondence is all a D1 batch returns.
+ * Get the offset wrong and a lost stock guard is read as a full run — the buyer
+ * is told the wrong thing and the wrong compensation runs.
+ */
+import { describe, expect, test } from "bun:test";
+
+import { classifyGuards, type GuardResult } from "../../src/core/guards.ts";
+import type { OrderLine, RunClaim } from "../../src/core/pricing.ts";
+
+const lineOf = (variantId: string, productId: string, preorder = false): OrderLine => ({
+  variantId,
+  productId,
+  title: "Item",
+  size: "M",
+  unitPriceCents: 1_000,
+  quantity: 1,
+  preorder,
+  expectedShipAt: null,
+});
+
+const claimOf = (productId: string): RunClaim => ({ productId, title: "Item", quantity: 1 });
+
+/** A D1 statement result for a guard that matched, or did not. */
+const won: GuardResult = { meta: { changes: 1 } };
+const lost: GuardResult = { meta: { changes: 0 } };
+
+describe("line guards", () => {
+  const lines = [lineOf("v1", "p1"), lineOf("v2", "p1"), lineOf("v3", "p1")];
+
+  test("every guard matching means nothing failed", () => {
+    const result = classifyGuards(lines, [], [won, won, won]);
+    expect(result.succeeded).toHaveLength(3);
+    expect(result.firstFailing).toBeUndefined();
+  });
+
+  test("a zero-row guard is a loss, and the FIRST one is reported", () => {
+    const result = classifyGuards(lines, [], [won, lost, lost]);
+    expect(result.firstFailing?.variantId).toBe("v2");
+  });
+
+  /**
+   * The winners committed alongside the loser — a zero-row UPDATE does not abort
+   * a D1 batch — so they have to be handed back explicitly. Losing the list of
+   * winners means stranding their stock permanently.
+   */
+  test("winners are still collected when a later guard loses", () => {
+    const result = classifyGuards(lines, [], [won, lost, won]);
+    expect(result.succeeded.map((line) => line.variantId)).toEqual(["v1", "v3"]);
+  });
+
+  test("a missing result reads as a loss rather than a win", () => {
+    const result = classifyGuards(lines, [], [won]);
+    expect(result.firstFailing?.variantId).toBe("v2");
+    expect(result.succeeded).toHaveLength(1);
+  });
+
+  test("absent meta reads as a loss", () => {
+    const result = classifyGuards(lines, [], [{}, won, won]);
+    expect(result.firstFailing?.variantId).toBe("v1");
+  });
+
+  /**
+   * A guard is a compare-and-set against ONE row by primary key, so exactly one
+   * row should change. Anything else means the statement did not do what the
+   * caller believes, and reading it as success would confirm a reservation that
+   * never happened.
+   */
+  test("a multi-row change is not counted as a win", () => {
+    const result = classifyGuards(lines, [], [{ meta: { changes: 2 } }, won, won]);
+    expect(result.firstFailing?.variantId).toBe("v1");
+  });
+});
+
+describe("run guards read at the correct offset", () => {
+  const lines = [lineOf("v1", "p1", true), lineOf("v2", "p1", true)];
+  const claims = [claimOf("p1")];
+
+  test("run guards are read AFTER the line guards, not among them", () => {
+    // Both lines won; the run guard lost. Read at the wrong offset this would
+    // surface as a failing LINE instead of a full run.
+    const result = classifyGuards(lines, claims, [won, won, lost]);
+    expect(result.firstFailing).toBeUndefined();
+    expect(result.firstFullRun?.productId).toBe("p1");
+    expect(result.claimed).toHaveLength(0);
+  });
+
+  test("a full run is distinguished from a lost line", () => {
+    const result = classifyGuards(lines, claims, [lost, won, won]);
+    expect(result.firstFailing?.variantId).toBe("v1");
+    expect(result.firstFullRun).toBeUndefined();
+    expect(result.claimed).toHaveLength(1);
+  });
+
+  test("both can lose at once", () => {
+    const result = classifyGuards(lines, claims, [lost, won, lost]);
+    expect(result.firstFailing?.variantId).toBe("v1");
+    expect(result.firstFullRun?.productId).toBe("p1");
+  });
+
+  test("claims that won are collected so they can be compensated", () => {
+    const twoClaims = [claimOf("p1"), claimOf("p2")];
+    const result = classifyGuards(lines, twoClaims, [won, won, won, lost]);
+    expect(result.claimed.map((claim) => claim.productId)).toEqual(["p1"]);
+    expect(result.firstFullRun?.productId).toBe("p2");
+  });
+
+  test("results beyond the guards are ignored", () => {
+    // Checkout appends order writes after the guards; they must not be read.
+    const result = classifyGuards(lines, claims, [won, won, won, won, won, won]);
+    expect(result.succeeded).toHaveLength(2);
+    expect(result.claimed).toHaveLength(1);
+    expect(result.firstFailing).toBeUndefined();
+    expect(result.firstFullRun).toBeUndefined();
+  });
+});
+
+describe("degenerate inputs", () => {
+  test("no lines and no claims classifies nothing", () => {
+    const result = classifyGuards([], [], []);
+    expect(result).toEqual({
+      succeeded: [],
+      firstFailing: undefined,
+      claimed: [],
+      firstFullRun: undefined,
+    });
+  });
+
+  test("a cart with no pre-orders has no run guards to read", () => {
+    const result = classifyGuards([lineOf("v1", "p1")], [], [won]);
+    expect(result.firstFullRun).toBeUndefined();
+    expect(result.claimed).toEqual([]);
+  });
+});
