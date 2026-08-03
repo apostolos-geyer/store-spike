@@ -82,6 +82,12 @@ export type CheckoutError =
   | "out_of_stock"
   /** A pre-order run is fully subscribed — distinct from a shelf being empty. */
   | "preorder_full"
+  /**
+   * Another request with the same command id is mid-flight, or died mid-flight.
+   * A double tap gets this on the losing request while the winner completes —
+   * which is the correct answer: one cart, one reservation.
+   */
+  | "in_progress"
   | "payments_unavailable";
 
 /**
@@ -147,6 +153,21 @@ const orderWriteStatements = (
  */
 export const placeOrder = Effect.fn("Checkout.placeOrder")(function* (
   input: PlaceOrderInput,
+  /**
+   * THE LEDGER'S CLAIM, and it goes in the FIRST batch — beside the stock
+   * guards, not after them.
+   *
+   * This core cannot hand its statements to `Audit.command`: it has to commit
+   * the reservation, inspect which guards won, and only then call the payment
+   * provider. That left the reservation outside the ledger's batch, so two taps
+   * of Buy both missed the replay check, both decremented stock, and the loser
+   * died on the unique index with its phantom hold intact.
+   *
+   * Committing the claim WITH the guards makes the unique index arbitrate the
+   * reservation itself: both requests reach the batch, exactly one commits, and
+   * the loser's guards roll back with it.
+   */
+  claim: DbStatement,
 ): Effect.fn.Return<
   CoreOutcome<PlacedOrder, CheckoutError>,
   never,
@@ -195,8 +216,18 @@ export const placeOrder = Effect.fn("Checkout.placeOrder")(function* (
    */
   const claims = runClaims(totals.lines);
 
-  const results = yield* Effect.orDie(
+  /**
+   * NOT `orDie` — the unique index is a CONTROL PATH here, not a crash.
+   *
+   * The claim shares this batch with the guards precisely so a concurrent
+   * duplicate loses on the index, which means D1 answers with a constraint
+   * violation and rolls the whole batch back: no reservation, no order rows,
+   * nothing to compensate. That is the mechanism working, so it has to become a
+   * domain result rather than a 500 on the losing tap of a double-clicked Buy.
+   */
+  const committed = yield* Effect.result(
     database.run([
+      claim,
       ...totals.lines.map((line) => guardStatement(db, line)),
       ...claims.map((claim) => runGuardStatement(db, claim)),
       ...orderWriteStatements(
@@ -212,11 +243,26 @@ export const placeOrder = Effect.fn("Checkout.placeOrder")(function* (
       ),
     ]),
   );
+  if (committed._tag === "Failure") {
+    const detail = String(committed.failure.message ?? committed.failure);
+    // Anything else is a real infrastructure failure and must still crash.
+    if (!/UNIQUE constraint failed: command_event/i.test(detail)) {
+      return yield* Effect.die(committed.failure);
+    }
+    return { failure: err("in_progress") };
+  }
+  const results = committed.success;
 
+  /**
+   * The claim occupies the FIRST slot, so the guard results start one later.
+   * `classifyGuards` reads positionally because positional correspondence is all
+   * D1's batch hands back, which makes this offset load-bearing rather than
+   * cosmetic.
+   */
   const { succeeded, firstFailing, claimed, firstFullRun } = classifyGuards(
     totals.lines,
     claims,
-    results,
+    results.slice(1),
   );
 
   /**

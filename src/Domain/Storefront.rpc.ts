@@ -25,6 +25,8 @@ export class CartRefused extends Schema.TaggedErrorClass<CartRefused>()("CartRef
     "out_of_stock",
     /** The run is fully subscribed. Distinct from a shelf being empty. */
     "preorder_full",
+    /** A duplicate of this exact request is already being processed. */
+    "in_progress",
     "payments_unavailable",
   ]),
   detail: Schema.optional(Schema.String),

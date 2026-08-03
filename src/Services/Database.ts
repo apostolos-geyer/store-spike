@@ -10,7 +10,7 @@
  * A batch is the store's ONLY atomicity primitive, and two invariants depend on
  * it outright:
  *
- *  - AUDIT: the domain mutation and its `store_operator_event` insert commit
+ *  - AUDIT: the domain mutation and its `command_event` insert commit
  *    together, or neither does.
  *  - RESERVATION: per-statement `meta.changes` is the only trustworthy signal
  *    that a guarded conditional UPDATE actually matched a row.

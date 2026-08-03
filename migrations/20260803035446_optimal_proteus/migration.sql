@@ -1,3 +1,18 @@
+CREATE TABLE `command_event` (
+	`id` text PRIMARY KEY,
+	`actor_sub` text NOT NULL,
+	`actor_email` text NOT NULL,
+	`action` text NOT NULL,
+	`target_type` text NOT NULL,
+	`target_id` text NOT NULL,
+	`request_id` text NOT NULL,
+	`idempotency_key` text NOT NULL,
+	`outcome` text NOT NULL,
+	`detail_json` text,
+	`response_json` text,
+	`created_at` integer NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE `customer_order` (
 	`id` text PRIMARY KEY,
 	`order_number` text NOT NULL UNIQUE,
@@ -20,6 +35,8 @@ CREATE TABLE `customer_order` (
 	`currency` text DEFAULT 'cad' NOT NULL,
 	`session_id` text UNIQUE,
 	`payment_intent_id` text,
+	`stock_released_at` integer,
+	`refunded_cents` integer DEFAULT 0 NOT NULL,
 	`session_expires_at` integer,
 	`payment_status` text DEFAULT 'unpaid' NOT NULL,
 	`carrier` text,
@@ -55,21 +72,6 @@ CREATE TABLE `fake_session` (
 	`ship_city` text,
 	`ship_region` text,
 	`ship_postal` text
-);
---> statement-breakpoint
-CREATE TABLE `store_operator_event` (
-	`id` text PRIMARY KEY,
-	`operator_sub` text NOT NULL,
-	`operator_email` text NOT NULL,
-	`action` text NOT NULL,
-	`target_type` text NOT NULL,
-	`target_id` text NOT NULL,
-	`request_id` text NOT NULL,
-	`idempotency_key` text NOT NULL,
-	`outcome` text NOT NULL,
-	`detail_json` text,
-	`response_json` text,
-	`created_at` integer NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `order_item` (
@@ -180,11 +182,14 @@ CREATE TABLE `product_variant` (
 	CONSTRAINT "stock_non_negative" CHECK(stock >= 0)
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `command_event_idempotency_action_unique` ON `command_event` (`idempotency_key`,`action`);--> statement-breakpoint
+CREATE INDEX `idx_command_event_target` ON `command_event` (`target_type`,`target_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `idx_order_user` ON `customer_order` (`user_id`,`created_at`);--> statement-breakpoint
-CREATE INDEX `idx_order_status` ON `customer_order` (`status`);--> statement-breakpoint
 CREATE INDEX `idx_order_created` ON `customer_order` (`created_at`);--> statement-breakpoint
-CREATE UNIQUE INDEX `store_operator_event_idempotency_action_unique` ON `store_operator_event` (`idempotency_key`,`action`);--> statement-breakpoint
+CREATE INDEX `idx_order_sweep` ON `customer_order` (`status`,`payment_status`,`session_expires_at`);--> statement-breakpoint
+CREATE INDEX `idx_order_payment_intent` ON `customer_order` (`payment_intent_id`);--> statement-breakpoint
 CREATE INDEX `idx_item_order` ON `order_item` (`order_id`);--> statement-breakpoint
+CREATE INDEX `idx_payment_event_order` ON `payment_event` (`order_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `idx_product_status_updated` ON `product` (`status`,`updated_at`);--> statement-breakpoint
 CREATE INDEX `idx_product_image_product` ON `product_image` (`product_id`,`position`);--> statement-breakpoint
 CREATE UNIQUE INDEX `product_release_product_version_unique` ON `product_release` (`product_id`,`version`);--> statement-breakpoint

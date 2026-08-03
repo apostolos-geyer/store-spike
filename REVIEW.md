@@ -198,7 +198,7 @@ Not refuted on the headline, but downgraded from high to low: the stated failure
 
 ## Open
 
-### O1. Checkout commits its reservation outside the audit batch; the idempotency UNIQUE cannot undo a concurrent duplicate
+### O1. Checkout commits its reservation outside the audit batch; the idempotency UNIQUE cannot undo a concurrent duplicate — **FIXED**
 
 **HIGH** · `src/Domain/Checkout.ts:189` · lens `?` · reviewer confidence `high`
 
@@ -231,7 +231,7 @@ Not refuted on the headline, but downgraded from high to low: the stated failure
 **Independent verification.** The control flow is as described. Batch 1 (Checkout.ts:189-204) commits the guards AND the customer_order + all order_item inserts together; a zero-row guard does not abort it, so a losing line's order_item row is committed with no matching decrement. Compensation is a SEPARATE `database.run` at Checkout.ts:217-224, and `orderRollbackStatements` (Reservations.ts:269-275) — the thing that deletes the order rows — lives only in that second batch. `Database.run` maps a batch rejection to `BatchFailed` (Services/Database.ts:78-85) and the call site wraps it in `Effect.orDie`, so a transient D1 failure or a worker eviction between the two batches leaves the order row permanently. That row has sessionId NULL and status 'pending', so the orphan query (Reconcile.ts:82-93) selects it after ORPHAN_GRACE_MS and `release` (Reconcile.ts:68-79) applies `restoreStatements` to EVERY order_item row — there is no record of which guards won, so the loser's line is credited stock it never held. The symmetric case holds too: if only the run guard lost, `claimed` is empty but the sweep's `restoreStatements` still emits `compensateRunStatement` for every preorder line (Reservations.ts:356-367), decrementing `preorder_claimed` for a claim that was never incremented — silently, because of the `max(0, ...)` floor. This does contradict the docstring at Checkout.ts:10-12. I am lowering severity because it requires a compound failure: a guard must lose (contention-only) AND the process must fail in the microsecond window between two consecutive batch calls. Real defect, low likelihood.
 
 
-### O4. Checkout reserves stock in its own batch, outside the audit commit — every retry re-reserves
+### O4. Checkout reserves stock in its own batch, outside the audit commit — every retry re-reserves — **FIXED**
 
 **MEDIUM** · `src/Domain/Checkout.ts:189` · lens `?` · reviewer confidence `high`
 
@@ -274,7 +274,7 @@ I downgrade critical/high to medium only because the trigger is narrower than st
 **Independent verification.** The race is real but the consequence is much smaller than claimed. Catalog.ts reads `preorder_claimed` in its own SELECT, tests `input.cap < current.claimed`, and returns an UPDATE whose WHERE is only `eq(product.id, ...)` — no `preorder_claimed <= cap` predicate, unlike runGuardStatement (Reservations.ts:246-252) and adjustStock (Catalog.ts, `stock + delta >= 0` in SQL). The CHECK exists and is deployed (Schema.ts:110-113, migrations/20260803012436_sticky_killer_shrike/migration.sql:112), and Audit.command commits under `Effect.orDie` (Services/Audit.ts:128-146), so a claim landing in the window does turn a domain error into a 500. However: the CHECK fires, so D1 rolls the whole batch back — the cap is NOT lowered below claimed, `preorder_cap`/`preorder_claimed` stay consistent, and because no operator_event row is written the idempotency key is unconsumed, so an immediate retry re-reads claimed=151 and returns the proper `cap_below_claimed`. There is no data corruption, no money loss, and no oversell — the schema constraint the finder cites as the victim is in fact what saves it. The window is the few ms between the SELECT and the batch, and it only bites when an operator shrinks a cap to within a few units of claimed at the exact moment a checkout claims. Genuine but low: a spurious 500 on a self-healing operator path, plus a possibly-stale `remaining` in the success response.
 
 
-### O7. `/media/:id` serves any image row with no publication check, and marks it immutable for a year
+### O7. `/media/:id` serves any image row with no publication check, and marks it immutable for a year — **FIXED**
 
 **LOW** · `src/Workers/Catalog.ts:159` · lens `?` · reviewer confidence `high`
 

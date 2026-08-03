@@ -2,7 +2,7 @@
  * What happened to one order, in order.
  *
  * THE PROBLEM. Everything an order went through is already recorded — but in two
- * tables that do not join. `store_operator_event` keys on the order NUMBER,
+ * tables that do not join. `command_event` keys on the order NUMBER,
  * because that is what an operator names; `payment_event` keys on the internal
  * id, because that is what the provider's metadata carries. So "when did we get
  * paid, and when did we set the tracking number, and who did it" is answerable
@@ -22,7 +22,7 @@ import { and, asc, eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import { query, type ClassicDb } from "../Services/Database.ts";
-import { customerOrder, operatorEvent, paymentEvent } from "./Schema.ts";
+import { customerOrder, commandEvent, paymentEvent } from "./Schema.ts";
 
 /**
  * Which log an entry came from, so a reader can tell an ACTION from an EVENT.
@@ -75,17 +75,17 @@ export const orderTimeline = Effect.fn("Timeline.orderTimeline")(function* (
   const commands = yield* query(() =>
     db
       .select({
-        at: operatorEvent.createdAt,
-        action: operatorEvent.action,
-        actor: operatorEvent.operatorEmail,
-        outcome: operatorEvent.outcome,
-        detail: operatorEvent.detailJson,
+        at: commandEvent.createdAt,
+        action: commandEvent.action,
+        actor: commandEvent.actorEmail,
+        outcome: commandEvent.outcome,
+        detail: commandEvent.detailJson,
       })
-      .from(operatorEvent)
+      .from(commandEvent)
       .where(
-        and(eq(operatorEvent.targetType, "order"), eq(operatorEvent.targetId, orderNumber)),
+        and(eq(commandEvent.targetType, "order"), eq(commandEvent.targetId, orderNumber)),
       )
-      .orderBy(asc(operatorEvent.createdAt)),
+      .orderBy(asc(commandEvent.createdAt)),
   );
 
   // Provider events are recorded against the INTERNAL id — the handle the

@@ -24,6 +24,7 @@ import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import { RpcClient, RpcSerialization } from "effect/unstable/rpc";
 
 import { OperatorRpcs } from "../src/Domain/Rpc.ts";
+import { StorefrontRpcs } from "../src/Domain/Storefront.rpc.ts";
 import { awaitStackReady } from "./Ready.ts";
 import Stack from "../alchemy.run.ts";
 
@@ -63,6 +64,26 @@ const withClient = <A, E, R>(
     Effect.scoped,
     Effect.provide(
       RpcClient.layerProtocolHttp({ url }).pipe(
+        Layer.provide(FetchHttpClient.layer),
+        Layer.provide(RpcSerialization.layerNdjson),
+      ),
+    ),
+  );
+
+const makeShopperClient = RpcClient.make(StorefrontRpcs);
+type ShopperClient = Effect.Success<typeof makeShopperClient>;
+
+/** The customer contract, over the storefront's own address. */
+const withShopper = <A, E, R>(
+  catalogUrl: string,
+  program: (client: ShopperClient) => Effect.Effect<A, E, R>,
+) =>
+  Effect.gen(function* () {
+    return yield* program(yield* makeShopperClient);
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      RpcClient.layerProtocolHttp({ url: `${catalogUrl}/rpc` }).pipe(
         Layer.provide(FetchHttpClient.layer),
         Layer.provide(RpcSerialization.layerNdjson),
       ),
@@ -120,6 +141,15 @@ const untilStorefront = <A>(
 /** A storefront read that tolerates a cold stack. Every raw fetch goes through it. */
 const storefront = <A>(fetchIt: () => Promise<A>): Effect.Effect<A> =>
   untilStorefront(fetchIt, () => true);
+
+/** Live stock for one variant, read through the operator surface. */
+const stockOf = (edgeUrl: string, productId: string, variantId: string) =>
+  withClient(edgeUrl, (client) =>
+    Effect.map(
+      client.getProduct({ productId }),
+      (detail) => detail.variants.find((v) => v.id === variantId)?.stock ?? -1,
+    ),
+  );
 
 const show = (title: string, body: unknown) => {
   console.log(`\n── ${title} ${"─".repeat(Math.max(0, 58 - title.length))}`);
@@ -624,6 +654,101 @@ test(
     if (clash._tag === "Failure") {
       expect(clash.failure._tag).toBe("PublishRefused");
     }
+  }),
+  { timeout: TEST_TIMEOUT },
+);
+
+test(
+  "L · a double-clicked Buy reserves stock once",
+  Effect.gen(function* () {
+    const { edgeUrl, catalogUrl } = yield* stack;
+    const slug = slugFor("doubleclick");
+    const product = yield* publishedProduct(edgeUrl, slug);
+    yield* withClient(edgeUrl, (client) =>
+      client.adjustStock({
+        commandId: cmd("stock"),
+        variantId: product.variantId,
+        delta: 0,
+        reason: "baseline",
+      }),
+    );
+
+    const before = yield* stockOf(edgeUrl, product.productId, product.variantId);
+
+    /**
+     * ONE command id, two requests in flight — a tapped Buy button on a phone
+     * that did not acknowledge the first tap. This is the case the idempotency
+     * ledger exists for, and `Audit.command` commits the mutation and its event
+     * row in a single batch precisely so the loser's UNIQUE violation rolls the
+     * whole thing back.
+     *
+     * Checkout runs its reservation in its OWN batch first, so both requests
+     * miss `recorded()`, both decrement, and only the losing session-id update
+     * is rolled back. The phantom hold stands until the sweep finds it.
+     */
+    const commandId = cmd("tap");
+    const buy = () =>
+      Effect.result(
+        withShopper(catalogUrl, (client) =>
+          client.placeOrder({
+            commandId,
+            email: `dbl-${RUN}@spike.local`,
+            destination: "CA",
+            items: [{ variantId: product.variantId, quantity: 2 }],
+          }),
+        ),
+      );
+
+    const [a, b] = yield* Effect.all([buy(), buy()], { concurrency: 2 });
+    const after = yield* stockOf(edgeUrl, product.productId, product.variantId);
+    show("L · double click", {
+      first: a._tag,
+      second: b._tag,
+      stockBefore: before,
+      stockAfter: after,
+    });
+
+    // At least one must succeed — a double tap is not a reason to refuse a sale.
+    expect([a._tag, b._tag]).toContain("Success");
+    // THE INVARIANT: one cart, one reservation, however many taps reached us.
+    expect(after).toBe(before - 2);
+  }),
+  { timeout: TEST_TIMEOUT },
+);
+
+test(
+  "M · media stops being served once its product is pulled from sale",
+  Effect.gen(function* () {
+    const { edgeUrl, catalogUrl } = yield* stack;
+    const product = yield* publishedProduct(edgeUrl, slugFor("pullable"));
+
+    const live = yield* untilStorefront(
+      () => fetch(`${catalogUrl}/media/${product.mediaId}`),
+      (r) => r.status === 200,
+    );
+    expect(live.status).toBe(200);
+
+    /**
+     * `unavailable` is a published product PULLED FROM SALE — the whole reason
+     * the status domain has four values rather than two. The listing and the
+     * product page both honour it. The media route does not: it resolves an
+     * image id straight to bytes with no join to the product at all, so a link
+     * anyone already has keeps working after the product is withdrawn.
+     */
+    yield* withClient(edgeUrl, (client) =>
+      client.setProductStatus({
+        commandId: cmd("pull"),
+        productId: product.productId,
+        status: "unavailable",
+      }),
+    );
+
+    const pulled = yield* untilStorefront(
+      () => fetch(`${catalogUrl}/media/${product.mediaId}`),
+      (r) => r.status === 404,
+    );
+    show("M · after pull", { status: pulled.status });
+    expect(pulled.status).toBe(404);
   }),
   { timeout: TEST_TIMEOUT },
 );

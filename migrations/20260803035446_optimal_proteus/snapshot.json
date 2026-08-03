@@ -1,11 +1,15 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "9735909c-8beb-4a56-9975-e1335cd8c9a2",
+  "id": "28d2c21a-4aee-4011-aa4e-12c4b635fcd9",
   "prevIds": [
-    "c5059755-719b-4714-be6d-0d88e5ead568"
+    "00000000-0000-0000-0000-000000000000"
   ],
   "ddl": [
+    {
+      "name": "command_event",
+      "entityType": "tables"
+    },
     {
       "name": "customer_order",
       "entityType": "tables"
@@ -16,10 +20,6 @@
     },
     {
       "name": "fake_session",
-      "entityType": "tables"
-    },
-    {
-      "name": "store_operator_event",
       "entityType": "tables"
     },
     {
@@ -53,6 +53,126 @@
     {
       "name": "product_variant",
       "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "command_event"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "actor_sub",
+      "entityType": "columns",
+      "table": "command_event"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "actor_email",
+      "entityType": "columns",
+      "table": "command_event"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "action",
+      "entityType": "columns",
+      "table": "command_event"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "target_type",
+      "entityType": "columns",
+      "table": "command_event"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "target_id",
+      "entityType": "columns",
+      "table": "command_event"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "request_id",
+      "entityType": "columns",
+      "table": "command_event"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "idempotency_key",
+      "entityType": "columns",
+      "table": "command_event"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "outcome",
+      "entityType": "columns",
+      "table": "command_event"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "detail_json",
+      "entityType": "columns",
+      "table": "command_event"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "response_json",
+      "entityType": "columns",
+      "table": "command_event"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "command_event"
     },
     {
       "type": "text",
@@ -563,126 +683,6 @@
       "name": "ship_postal",
       "entityType": "columns",
       "table": "fake_session"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "id",
-      "entityType": "columns",
-      "table": "store_operator_event"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "operator_sub",
-      "entityType": "columns",
-      "table": "store_operator_event"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "operator_email",
-      "entityType": "columns",
-      "table": "store_operator_event"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "action",
-      "entityType": "columns",
-      "table": "store_operator_event"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "target_type",
-      "entityType": "columns",
-      "table": "store_operator_event"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "target_id",
-      "entityType": "columns",
-      "table": "store_operator_event"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "request_id",
-      "entityType": "columns",
-      "table": "store_operator_event"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "idempotency_key",
-      "entityType": "columns",
-      "table": "store_operator_event"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "outcome",
-      "entityType": "columns",
-      "table": "store_operator_event"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "detail_json",
-      "entityType": "columns",
-      "table": "store_operator_event"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "response_json",
-      "entityType": "columns",
-      "table": "store_operator_event"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "table": "store_operator_event"
     },
     {
       "type": "text",
@@ -1479,6 +1479,15 @@
         "id"
       ],
       "nameExplicit": false,
+      "name": "command_event_pk",
+      "table": "command_event",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
       "name": "customer_order_pk",
       "table": "customer_order",
       "entityType": "pks"
@@ -1499,15 +1508,6 @@
       "nameExplicit": false,
       "name": "fake_session_pk",
       "table": "fake_session",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
-      "name": "store_operator_event_pk",
-      "table": "store_operator_event",
       "entityType": "pks"
     },
     {
@@ -1576,6 +1576,46 @@
     {
       "columns": [
         {
+          "value": "idempotency_key",
+          "isExpression": false
+        },
+        {
+          "value": "action",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "command_event_idempotency_action_unique",
+      "entityType": "indexes",
+      "table": "command_event"
+    },
+    {
+      "columns": [
+        {
+          "value": "target_type",
+          "isExpression": false
+        },
+        {
+          "value": "target_id",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_command_event_target",
+      "entityType": "indexes",
+      "table": "command_event"
+    },
+    {
+      "columns": [
+        {
           "value": "user_id",
           "isExpression": false
         },
@@ -1588,20 +1628,6 @@
       "where": null,
       "origin": "manual",
       "name": "idx_order_user",
-      "entityType": "indexes",
-      "table": "customer_order"
-    },
-    {
-      "columns": [
-        {
-          "value": "status",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "idx_order_status",
       "entityType": "indexes",
       "table": "customer_order"
     },
@@ -1622,20 +1648,38 @@
     {
       "columns": [
         {
-          "value": "idempotency_key",
+          "value": "status",
           "isExpression": false
         },
         {
-          "value": "action",
+          "value": "payment_status",
+          "isExpression": false
+        },
+        {
+          "value": "session_expires_at",
           "isExpression": false
         }
       ],
-      "isUnique": true,
+      "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "store_operator_event_idempotency_action_unique",
+      "name": "idx_order_sweep",
       "entityType": "indexes",
-      "table": "store_operator_event"
+      "table": "customer_order"
+    },
+    {
+      "columns": [
+        {
+          "value": "payment_intent_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_order_payment_intent",
+      "entityType": "indexes",
+      "table": "customer_order"
     },
     {
       "columns": [
@@ -1650,6 +1694,24 @@
       "name": "idx_item_order",
       "entityType": "indexes",
       "table": "order_item"
+    },
+    {
+      "columns": [
+        {
+          "value": "order_id",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_payment_event_order",
+      "entityType": "indexes",
+      "table": "payment_event"
     },
     {
       "columns": [

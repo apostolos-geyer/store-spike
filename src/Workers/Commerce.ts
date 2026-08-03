@@ -480,7 +480,9 @@ export default class CommerceWorker extends Cloudflare.Worker<CommerceWorker>()(
       placeOrder: (call: OperatorCall<Checkout.PlaceOrderInput>) =>
         Effect.gen(function* () {
           const audit = yield* Audit;
-          return yield* audit.command("placeOrder", call, Checkout.placeOrder(call.input));
+          return yield* audit.claimed("placeOrder", call, (claim) =>
+            Checkout.placeOrder(call.input, claim),
+          );
         }).pipe(Effect.provide(layer)),
 
       /**

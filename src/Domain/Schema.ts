@@ -496,10 +496,23 @@ export const paymentEvent = sqliteTable(
 // ── Operator audit and deletion intents ──────────────────────────────────────
 
 /**
- * The idempotency ledger AND the audit log, one table doing both jobs — which
- * is why the design works. UNIQUE(idempotency_key, action) makes a replayed
- * command a no-op, and `response_json` lets the replay return the ORIGINAL
- * response verbatim.
+ * THE COMMAND LEDGER: the idempotency record and the audit trail, one table
+ * doing both jobs — which is why the design works.
+ *
+ * The idempotency half is the one you cannot remove. A phone that drops its
+ * connection after the server reserved stock, but before the response arrived,
+ * produces a second identical request; without a durable "already did this"
+ * marker committed IN THE SAME BATCH as the work, that second request reserves
+ * again. UNIQUE(idempotency_key, action) makes a replay a no-op and
+ * `response_json` returns the ORIGINAL answer verbatim.
+ *
+ * The audit half is close to free once that row has to exist anyway — and it is
+ * what answers a chargeback. The order row holds only the LATEST value of every
+ * field, so a corrected tracking number erases the one that was emailed. This
+ * keeps both.
+ *
+ * It is a COMMAND log, not a change log: it records what was asked and what was
+ * answered, never before/after values, so state cannot be rebuilt from it.
  *
  * Exactly one row per successful mutation, inserted in the SAME batch as the
  * domain write, so audit and effect cannot diverge. Only successes are
@@ -507,12 +520,21 @@ export const paymentEvent = sqliteTable(
  * call is safely retryable. `detail_json` holds identifiers and COUNTS only —
  * never a body, blob, or secret.
  */
-export const operatorEvent = sqliteTable(
-  "store_operator_event",
+export const commandEvent = sqliteTable(
+  "command_event",
   {
     id: text("id").primaryKey(),
-    operatorSub: text("operator_sub").notNull(),
-    operatorEmail: text("operator_email").notNull(),
+    /**
+     * WHO ISSUED THE COMMAND — an operator OR a customer.
+     *
+     * Named `actor` rather than `operator` because a guest checkout writes rows
+     * here too: `placeOrder` runs through the same ledger with a subject of
+     * `customer:<email>`. Calling the column `operator_email` while it holds
+     * shoppers' addresses hides PII from anyone reasoning about the schema, and
+     * would quietly scope a "purge this operator" job over customers.
+     */
+    actorSub: text("actor_sub").notNull(),
+    actorEmail: text("actor_email").notNull(),
     action: text("action").notNull(),
     targetType: text("target_type").notNull(),
     targetId: text("target_id").notNull(),
@@ -524,13 +546,13 @@ export const operatorEvent = sqliteTable(
     createdAt: integer("created_at").notNull(),
   },
   (t) => [
-    uniqueIndex("store_operator_event_idempotency_action_unique").on(t.idempotencyKey, t.action),
+    uniqueIndex("command_event_idempotency_action_unique").on(t.idempotencyKey, t.action),
     /**
      * The other half of the order timeline. This is the fastest-growing table in
      * the store — one row per operator command, forever — and the timeline
      * filters it on `(target_type, target_id)`, which nothing else indexed.
      */
-    index("idx_operator_event_target").on(t.targetType, t.targetId, t.createdAt),
+    index("idx_command_event_target").on(t.targetType, t.targetId, t.createdAt),
   ],
 );
 

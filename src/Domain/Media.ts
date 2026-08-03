@@ -15,7 +15,7 @@
  * fails, an unreferenced object is left behind — the same benign leak the
  * deletion path accepts, and far better than a row pointing at nothing.
  */
-import { count, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import type { CoreOutcome } from "../Services/Audit.ts";
@@ -29,7 +29,7 @@ import {
   type MediaMutationError,
   type ProductMediaDTO,
 } from "./Contracts.ts";
-import { productImage } from "./Schema.ts";
+import { product, productImage } from "./Schema.ts";
 
 /** What the storefront and the operator console can actually display. */
 export const ALLOWED_CONTENT_TYPES = new Set([
@@ -123,13 +123,26 @@ export const ingestProductMedia = Effect.fn("Media.ingestProductMedia")(function
   };
 });
 
-/** Resolve a media id to its bytes, for the public `/media/:id` route. */
+/**
+ * Resolve a media id to its bytes, for the public `/media/:id` route.
+ *
+ * GATED ON THE PRODUCT BEING ACTIVE, joined rather than checked afterwards.
+ * `unavailable` is a published product PULLED FROM SALE — the whole reason the
+ * status domain has four values — and the listing and product page both honour
+ * it. Serving the image regardless meant a link anyone already had kept working
+ * after the product was withdrawn, which is the one thing withdrawing it was
+ * supposed to stop.
+ *
+ * INNER JOIN, so a missing or non-active product yields no row and the route
+ * 404s. Fail-closed, matching `Storefront.listActiveProducts`.
+ */
 export const openMedia = Effect.fn("Media.openMedia")(function* (db: ClassicDb, mediaId: string) {
   const rows = yield* query(() =>
     db
       .select({ storageKey: productImage.storageKey, contentType: productImage.contentType })
       .from(productImage)
-      .where(eq(productImage.id, mediaId))
+      .innerJoin(product, eq(product.id, productImage.productId))
+      .where(and(eq(productImage.id, mediaId), eq(product.status, "active")))
       .limit(1),
   );
   const row = rows[0];
