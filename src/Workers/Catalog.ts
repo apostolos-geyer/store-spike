@@ -25,7 +25,7 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
-import { deriveIdempotencyKey, type OperatorCall } from "../Domain/Contracts.ts";
+import { customerCall } from "../Domain/Contracts.ts";
 import * as MediaDomain from "../Domain/Media.ts";
 import * as Storefront from "../Domain/Storefront.ts";
 import {
@@ -36,27 +36,6 @@ import {
 import { handles, readCapabilities } from "../Runtime.ts";
 import { Database } from "../Services/Database.ts";
 import CommerceWorker from "./Commerce.ts";
-
-/**
- * The envelope Commerce expects, built for an ANONYMOUS caller.
- *
- * The subject is the buyer's own address rather than a session — this is a
- * guest checkout, and the address is the only stable thing they supply. It
- * matters because the idempotency key is derived from it: two shoppers whose
- * browsers happen to mint the same `commandId` must not collide, and a single
- * shopper double-clicking Buy must.
- */
-const customerCall = <T>(email: string, commandId: string, input: T): OperatorCall<T> => {
-  const sub = `customer:${email.trim().toLowerCase()}`;
-  return {
-    input,
-    meta: {
-      actor: { sub, email },
-      requestId: commandId,
-      idempotencyKey: deriveIdempotencyKey(sub, "placeOrder", commandId),
-    },
-  };
-};
 
 export default class CatalogWorker extends Cloudflare.Worker<CatalogWorker>()(
   "Catalog",

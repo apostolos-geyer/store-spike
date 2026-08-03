@@ -23,6 +23,8 @@ import type { Bump } from "../core/versions.ts";
  * (notably `err`'s byte-stable key omission) is provable without a database.
  * Re-exported here so this file stays the one vocabulary import for callers.
  */
+import { deriveIdempotencyKey } from "../core/result.ts";
+
 export { deriveIdempotencyKey, err, ok, type DomainResult } from "../core/result.ts";
 
 // ── Call envelope ────────────────────────────────────────────────────────────
@@ -44,6 +46,41 @@ export interface OperatorCall<T> {
   input: T;
   meta: OperatorMeta;
 }
+
+/**
+ * The envelope for an ANONYMOUS buyer, built once for every surface that takes
+ * a guest checkout.
+ *
+ * ONE DEFINITION, because two would not stay identical and the cost of drift is
+ * invisible. The subject is derived from the buyer's address — the only stable
+ * thing they supply — and the idempotency key hangs off that subject, so the
+ * derivation IS the dedup identity. Catalog and Console both accept checkouts;
+ * had one of them changed the normalisation, a shopper double-clicking Buy on
+ * that surface would stop replaying against the other, and the failure would
+ * look like a duplicate order rather than a contract divergence.
+ *
+ * Lowercased and trimmed for the same reason `getCustomerOrder` compares that
+ * way: an address is not case-sensitive in practice, and a retyped capital is
+ * not a different person — nor a different cart.
+ *
+ * Under a real user IdP the subject becomes the session's, and the dedup
+ * identity changes with it. That is a behavioural change, not a refactor.
+ */
+export const customerCall = <T>(
+  email: string,
+  commandId: string,
+  input: T,
+): OperatorCall<T> => {
+  const sub = `customer:${email.trim().toLowerCase()}`;
+  return {
+    input,
+    meta: {
+      actor: { sub, email },
+      requestId: commandId,
+      idempotencyKey: deriveIdempotencyKey(sub, "placeOrder", commandId),
+    },
+  };
+};
 
 // ── Versioning ───────────────────────────────────────────────────────────────
 

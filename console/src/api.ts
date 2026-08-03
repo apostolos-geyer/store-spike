@@ -7,13 +7,25 @@
  * would only produce a second place to drift.
  */
 
-/** The domain's own result envelope. Never thrown — always a value. */
-export type DomainResult<T> =
+/**
+ * The domain's own result envelope. Never thrown — always a value.
+ *
+ * Module-local: the pages only ever see the unwrapped value or a thrown error,
+ * so exporting this would widen the surface without a consumer.
+ */
+type DomainResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: string; message?: string };
 
-/** A refusal the domain returned, as distinct from a transport failure. */
-export class Refused extends Error {
+/**
+ * A refusal the domain returned, as distinct from a transport failure.
+ *
+ * Also module-local, and deliberately so: the pages render `.message` and do
+ * not discriminate on the type. Export it the moment one of them wants to treat
+ * `out_of_stock` differently from a dropped connection — until then an exported
+ * class nobody imports is a claim the code does not make.
+ */
+class Refused extends Error {
   constructor(
     readonly reason: string,
     detail?: string,
@@ -49,9 +61,10 @@ export const call = async <T>(operation: string, payload?: unknown): Promise<T> 
 };
 
 /**
- * Call an operation whose payload is a `DomainResult`, and surface a refusal as
- * a {@link Refused} so a component can render `out_of_stock` differently from a
- * network failure.
+ * Call an operation whose payload is a `DomainResult`, and raise a refusal as an
+ * error carrying the domain's own reason string — `out_of_stock`,
+ * `revision_conflict`, `missing_media` — so the page renders what the server
+ * actually said rather than a generic failure.
  */
 export const expect = async <T>(operation: string, payload?: unknown): Promise<T> => {
   const result = await call<DomainResult<T>>(operation, payload);

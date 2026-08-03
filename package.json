@@ -10,7 +10,7 @@
     "deploy": "alchemy deploy --stage spike",
     "destroy": "alchemy destroy --stage spike",
     "db:generate": "drizzle-kit generate",
-    "console:build": "vite build --config console/vite.config.ts console",
+    "console:build": "NODE_ENV=production vite build --config console/vite.config.ts console",
     "console:dev": "vite --config console/vite.config.ts console",
     "console:check": "tsc --noEmit -p console/tsconfig.json"
   },

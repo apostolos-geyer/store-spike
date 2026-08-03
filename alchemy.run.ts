@@ -105,6 +105,21 @@ export default Alchemy.Stack(
       command: "vite build",
       cwd: "console",
       outdir: "dist",
+      /**
+       * NODE_ENV IS PINNED, and it is not belt-and-braces.
+       *
+       * `bun test` exports `NODE_ENV=test`, and a Build inherits `process.env`
+       * — so the integration suite deployed a console whose React resolved
+       * through its DEVELOPMENT export condition: 175 modules and 608 kB
+       * against 168 and 349, with dev-only warning machinery shipped to
+       * browsers. Any CI that sets `NODE_ENV` to anything but `production`
+       * would ship the same bundle to production.
+       *
+       * It has to be the ENVIRONMENT rather than a `define`: React is selected
+       * by package export conditions at resolve time, which a build-time string
+       * substitution happens too late to influence.
+       */
+      env: { NODE_ENV: "production" },
     });
 
     const consoleApp = yield* ConsoleWorker;

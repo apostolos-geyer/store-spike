@@ -37,7 +37,12 @@ import * as Effect from "effect/Effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
-import { deriveIdempotencyKey, type OperatorActor, type OperatorCall } from "../Domain/Contracts.ts";
+import {
+  customerCall,
+  deriveIdempotencyKey,
+  type OperatorActor,
+  type OperatorCall,
+} from "../Domain/Contracts.ts";
 import CatalogWorker from "./Catalog.ts";
 import CommerceWorker from "./Commerce.ts";
 import SettlementWorker from "./Settlement.ts";
@@ -67,27 +72,6 @@ const envelope = <T>(action: string, commandId: string, input: T): OperatorCall<
 /** Reads carry no command id — there is nothing to replay. */
 const readEnvelope = <T>(action: string, input: T): OperatorCall<T> =>
   envelope(action, `read:${action}`, input);
-
-/**
- * A guest checkout's envelope, keyed on the buyer's address.
- *
- * The address is the only stable thing an anonymous shopper supplies, and the
- * idempotency key is derived from it — so two browsers that mint the same
- * `commandId` do not collide, and one shopper double-clicking Buy does. Under a
- * real user IdP this becomes the session subject and the dedup identity changes
- * with it; that is a behavioural change, not a refactor.
- */
-const customerCall = <T>(email: string, commandId: string, input: T): OperatorCall<T> => {
-  const sub = `customer:${email.trim().toLowerCase()}`;
-  return {
-    input,
-    meta: {
-      actor: { sub, email },
-      requestId: commandId,
-      idempotencyKey: deriveIdempotencyKey(sub, "placeOrder", commandId),
-    },
-  };
-};
 
 /** The JSON body of an `/api` call, after the shape checks below. */
 type Payload = Record<string, unknown>;
