@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "81cd1966-3517-4d64-8361-dffcc928d3f8",
+  "id": "c5059755-719b-4714-be6d-0d88e5ead568",
   "prevIds": [
-    "c44c3803-bf1a-4bf4-ada6-9ea05e3895ca"
+    "00000000-0000-0000-0000-000000000000"
   ],
   "ddl": [
     {
@@ -91,6 +91,16 @@
       "default": null,
       "generated": null,
       "name": "email",
+      "entityType": "columns",
+      "table": "customer_order"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "receipt_email",
       "entityType": "columns",
       "table": "customer_order"
     },
@@ -871,6 +881,26 @@
       "default": null,
       "generated": null,
       "name": "active_release_id",
+      "entityType": "columns",
+      "table": "product"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "preorder_cap",
+      "entityType": "columns",
+      "table": "product"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "preorder_claimed",
       "entityType": "columns",
       "table": "product"
     },
@@ -1737,6 +1767,18 @@
       "name": "ship_address_atomic",
       "entityType": "checks",
       "table": "customer_order"
+    },
+    {
+      "value": "preorder_claimed >= 0",
+      "name": "preorder_claimed_non_negative",
+      "entityType": "checks",
+      "table": "product"
+    },
+    {
+      "value": "preorder_cap IS NULL OR preorder_claimed <= preorder_cap",
+      "name": "preorder_claimed_within_cap",
+      "entityType": "checks",
+      "table": "product"
     },
     {
       "value": "status IN ('draft', 'active', 'unavailable', 'archived')",

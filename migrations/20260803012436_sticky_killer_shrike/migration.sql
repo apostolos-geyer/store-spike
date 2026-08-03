@@ -3,6 +3,7 @@ CREATE TABLE `customer_order` (
 	`order_number` text NOT NULL UNIQUE,
 	`user_id` text NOT NULL,
 	`email` text NOT NULL,
+	`receipt_email` text,
 	`status` text DEFAULT 'pending' NOT NULL,
 	`ship_name` text,
 	`ship_line1` text,
@@ -14,8 +15,11 @@ CREATE TABLE `customer_order` (
 	`ship_phone` text,
 	`subtotal_cents` integer NOT NULL,
 	`shipping_cents` integer DEFAULT 0 NOT NULL,
-	`total_cents` integer NOT NULL,
+	`tax_cents` integer DEFAULT 0 NOT NULL,
+	`total_cents` integer DEFAULT 0 NOT NULL,
+	`currency` text DEFAULT 'cad' NOT NULL,
 	`session_id` text UNIQUE,
+	`payment_intent_id` text,
 	`session_expires_at` integer,
 	`payment_status` text DEFAULT 'unpaid' NOT NULL,
 	`carrier` text,
@@ -77,6 +81,8 @@ CREATE TABLE `order_item` (
 	`size_snapshot` text NOT NULL,
 	`unit_price_cents` integer NOT NULL,
 	`quantity` integer NOT NULL,
+	`preorder` integer DEFAULT false NOT NULL,
+	`expected_ship_at` integer,
 	CONSTRAINT `fk_order_item_order_id_customer_order_id_fk` FOREIGN KEY (`order_id`) REFERENCES `customer_order`(`id`) ON DELETE CASCADE
 );
 --> statement-breakpoint
@@ -96,10 +102,14 @@ CREATE TABLE `product` (
 	`slug` text NOT NULL UNIQUE,
 	`status` text DEFAULT 'draft' NOT NULL,
 	`active_release_id` text,
+	`preorder_cap` integer,
+	`preorder_claimed` integer DEFAULT 0 NOT NULL,
 	`created_by_sub` text NOT NULL,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
 	CONSTRAINT `fk_product_active_release_id_product_release_id_fk` FOREIGN KEY (`active_release_id`) REFERENCES `product_release`(`id`) ON DELETE SET NULL,
+	CONSTRAINT "preorder_claimed_non_negative" CHECK(preorder_claimed >= 0),
+	CONSTRAINT "preorder_claimed_within_cap" CHECK(preorder_cap IS NULL OR preorder_claimed <= preorder_cap),
 	CONSTRAINT "product_status_valid" CHECK(status IN ('draft', 'active', 'unavailable', 'archived'))
 );
 --> statement-breakpoint
@@ -163,6 +173,8 @@ CREATE TABLE `product_variant` (
 	`size` text NOT NULL,
 	`sku` text NOT NULL UNIQUE,
 	`stock` integer DEFAULT 0 NOT NULL,
+	`mode` text DEFAULT 'stock' NOT NULL,
+	`expected_ship_at` integer,
 	`created_at` integer NOT NULL,
 	CONSTRAINT `fk_product_variant_product_id_product_id_fk` FOREIGN KEY (`product_id`) REFERENCES `product`(`id`) ON DELETE CASCADE,
 	CONSTRAINT "stock_non_negative" CHECK(stock >= 0)
