@@ -45,7 +45,7 @@ will quietly do the wrong thing until they are done.
 | **Register for GST/HST in Stripe Tax** | `automatic_tax` is enabled and sessions report `requires_location_inputs`, but Stripe only charges tax where the account holds a registration. With none, **every Canadian order is taxed $0.** Deliberately leave the US unregistered while under the nexus threshold — same switch, flipped when you cross it. |
 | **Point a live webhook endpoint at Settlement** | `stripe listen` is a dev affordance. A deployed stage needs a real endpoint on `<settlement-url>/webhook` subscribed to the six events in `FORWARDED_EVENTS`, and its signing secret in `STRIPE_LIVE_WEBHOOK_SECRET`. |
 | **Set `STORE_STOREFRONT_URL`** | Where a buyer returns after paying. Defaulted only in dev; preprod and prod refuse to boot without it. |
-| **Deploy under a stage named `prod`** | `environmentFor` maps only `prod`/`production` to live keys. Any other name resolves to dev, which reads `STRIPE_TEST_*` — a live deploy under the wrong stage name runs on test keys. |
+| **Deploy under a stage named `prod`** | `environmentFor` maps `prod`/`production` to live keys and `preprod`/`staging` to `STRIPE_PREPROD_*`. **Every other name — including a typo — resolves to dev** and reads `STRIPE_TEST_*`, so a live deploy under the wrong stage name silently runs on test keys and takes no money at all. |
 
 Shipping rates are **inline `shipping_rate_data`**, built from
 `STORE_SHIPPING_CENTS_CA` / `_US` (defaults $12 / $22). Nothing is created in the

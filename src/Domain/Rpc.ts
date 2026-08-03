@@ -30,6 +30,18 @@ export const ProductStatus = Schema.Literals([
   "archived",
 ]);
 
+/**
+ * All three roles are PUBLIC, and that is the policy rather than an oversight.
+ *
+ * `evidence` is a display role — condition, provenance, authenticity — so it is
+ * copied into a release and served to anonymous shoppers exactly like `gallery`.
+ * Recorded here because the premise was previously unwritten anywhere in the
+ * tree, which is enough for a reader to conclude the opposite and file it as a
+ * leak of internal QA photography.
+ *
+ * The role travels all the way to the client on purpose: the storefront is
+ * expected to branch on it at render time, not to receive a pre-filtered list.
+ */
 export const MediaRole = Schema.Literals(["cover", "gallery", "evidence"]);
 
 export const OrderStatus = Schema.Literals([
@@ -169,7 +181,7 @@ export const OrderDetail = Schema.Struct({
  */
 export const TimelineEntry = Schema.Struct({
   at: Schema.Number,
-  source: Schema.Literals(["operator", "payment"]),
+  source: Schema.Literals(["operator", "customer", "payment"]),
   action: Schema.String,
   actor: Schema.NullOr(Schema.String),
   outcome: Schema.String,

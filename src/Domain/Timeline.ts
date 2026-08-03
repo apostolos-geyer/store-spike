@@ -22,17 +22,25 @@ import { and, asc, eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
 import { query, type ClassicDb } from "../Services/Database.ts";
+import { actorKind } from "../core/actors.ts";
 import { customerOrder, commandEvent, paymentEvent } from "./Schema.ts";
 
 /**
- * Which log an entry came from, so a reader can tell an ACTION from an EVENT.
+ * Which log an entry came from, and — for the command ledger — WHO.
  *
  * The distinction is not cosmetic: `operator` is something a person in this
  * business chose to do and is attributable to them, `payment` is something the
  * provider told us happened. Conflating them makes an audit trail useless for
  * the question it exists to answer.
+ *
+ * `customer` exists because the command ledger holds both. A guest checkout is
+ * a command — it takes an idempotency key and writes a `command_event` row —
+ * but nobody in this business chose it, and reporting it as `operator` with the
+ * buyer's own email as `actor` made every order in the book look like a staff
+ * action. The namespace on `actor_sub` is what tells them apart, and a caller
+ * cannot choose that prefix.
  */
-export type TimelineSource = "operator" | "payment";
+export type TimelineSource = "operator" | "customer" | "payment";
 
 export interface TimelineEntry {
   readonly at: number;
@@ -78,6 +86,7 @@ export const orderTimeline = Effect.fn("Timeline.orderTimeline")(function* (
         at: commandEvent.createdAt,
         action: commandEvent.action,
         actor: commandEvent.actorEmail,
+        actorSub: commandEvent.actorSub,
         outcome: commandEvent.outcome,
         detail: commandEvent.detailJson,
       })
@@ -106,7 +115,7 @@ export const orderTimeline = Effect.fn("Timeline.orderTimeline")(function* (
     ...commands.map(
       (row): TimelineEntry => ({
         at: row.at,
-        source: "operator",
+        source: actorKind(row.actorSub),
         action: row.action,
         actor: row.actor,
         outcome: row.outcome,

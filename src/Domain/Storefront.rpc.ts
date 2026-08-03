@@ -98,7 +98,14 @@ export class StorefrontRpcs extends RpcGroup.make(
   Rpc.make("placeOrder", {
     payload: {
       commandId: Schema.String.check(Schema.isMinLength(1)),
-      email: Schema.String.check(Schema.isMinLength(3)),
+      /**
+       * BOUNDED, because this endpoint is anonymous and the value is persisted
+       * twice per order — on `customer_order` and again in the command ledger.
+       * 254 is the RFC 5321 limit for an address, so nothing legitimate is
+       * refused and an unbounded string cannot be used to write megabytes into
+       * two tables with a single unauthenticated call.
+       */
+      email: Schema.String.check(Schema.isMinLength(3), Schema.isMaxLength(254)),
       /**
        * Chosen on the storefront BEFORE checkout opens, because it decides the
        * shipping rate and pins the address form to one country. Asking Stripe
