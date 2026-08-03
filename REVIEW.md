@@ -67,11 +67,15 @@ recorded here so the next reader does not re-derive them:
   the claim is `ON CONFLICT DO NOTHING` and read as `meta.changes`.
 - Twelve DTOs were hand-copied twins of their schemas; two had already drifted.
   **Fixed** — derived via `typeof Schema.Type`.
-- `nextVersion` hardcodes the major, so an operator-supplied `2.0.0` makes the
-  next derived version sort below it. **Open**, pinned by test, harmless while
-  versions are labels.
-- `sortBySize` documents "not lexicographically" but its fallback is exactly
-  that. **Open**, pinned by test.
+- `nextVersion` read the largest MINOR seen anywhere and pasted it under a
+  hardcoded major, so `["1.0.0","2.0.0"]` derived `1.1.0` — below its own
+  predecessor — and `["2.3.0"]` derived `1.4.0`. It also could never emit a
+  patch. **Fixed**: derived from the latest by `compareVersions`, with an
+  explicit `bump` of major/minor/patch defaulting to minor.
+- `sortBySize` documented "not lexicographically" while its fallback for sizes
+  outside the declared scale was exactly that. **Fixed in the comment**, not the
+  code: lexicographic is a fine tiebreak for the labels this store uses, and the
+  docstring now says so rather than implying numeric ordering.
 
 
 ## Fixed

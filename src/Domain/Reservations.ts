@@ -1,11 +1,16 @@
 /**
- * Pricing and stock reservation.
+ * The SQL of pricing and stock reservation. THE RULES LIVE IN `core/`:
+ * `core/pricing.ts` decides what a cart costs and `core/guards.ts` decides
+ * whether a conditional write took. What is left here is the statements that
+ * act on those decisions, plus the queries that load their inputs — which is
+ * why this module needs a database handle and those two do not.
  *
  * PRICE AUTHORITY. A price crosses into an order only from the product's ACTIVE
- * RELEASE — never from the draft and never from the client. A product with no
- * active release contributes NO pricing row and fails closed as
- * `product_unavailable`. Once written, an order line's `unitPriceCents` is a
- * permanent snapshot.
+ * RELEASE — never from the draft and never from the client. That rule is
+ * enforced by `loadPricingInputs` below: it INNER JOINs through the active
+ * release, so a product without one contributes no pricing row and the cart
+ * fails closed as `product_unavailable`. Once written, an order line's
+ * `unitPriceCents` is a permanent snapshot.
  *
  * RESERVATION CONCURRENCY. Reserving stock is a SQL-guarded conditional UPDATE
  * whose `meta.changes` (0 or 1) is the only trustworthy signal that a line
@@ -14,12 +19,13 @@
  *
  * D1's batch aborts on a statement ERROR but NOT on a zero-row UPDATE — a guard
  * matching nothing is a no-op, not a failure. So a failed guard is compensated
- * EXPLICITLY: re-increment the lines that did decrement and remove the order
- * rows that committed beside them. That is measured, not assumed — see the
- * atomicity test.
+ * EXPLICITLY by `Checkout.placeOrder`: re-increment the lines that did
+ * decrement and remove the order rows that committed beside them. Measured
+ * rather than assumed — test L, `a double-clicked Buy reserves stock once`.
  *
  * Reservation is NOT idempotent. Each call decrements; callers own not invoking
- * it twice for the same intent, which is what `Audit.command` guarantees.
+ * it twice for the same intent, which is what `Audit.claimed` guarantees by
+ * putting the ledger claim in the same batch as the guards.
  */
 import { eq, inArray, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";

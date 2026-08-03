@@ -3,7 +3,7 @@
  * why the design works.
  *
  * v2 got this right and it is the most portable thing in its store. The
- * contract, in three parts:
+ * contract, in four parts:
  *
  *  1. Every mutating command begins with an idempotency lookup. A hit returns
  *     the ORIGINAL response verbatim and re-runs nothing.
@@ -12,6 +12,11 @@
  *     record, and the next retry would mutate again.
  *  3. A typed-error return writes NO event, so a failed call stays retryable
  *     and a recorded row always means a success replay.
+ *  4. A core may declare that some of its statements are CONDITIONAL — see
+ *     {@link GuardedStatement}. Those are checked after the commit, and a guard
+ *     that matched nothing removes the event row, which puts the call back under
+ *     rule 3. Without it a response computed before the batch could be recorded
+ *     as fact when the write it describes never happened.
  *
  * {@link command} is that whole protocol in one place, so no call site can
  * implement half of it. A core hands back the statements it wants committed and

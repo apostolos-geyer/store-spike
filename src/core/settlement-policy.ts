@@ -2,10 +2,12 @@
  * The event-to-outcome policy: which events mean what, and when an event has
  * arrived too late to be applied.
  *
- * Extracted from `Domain/Settlement.ts` unchanged in behaviour. `settle` is 351
+ * Extracted from `Domain/Settlement.ts` unchanged in behaviour. `settle` was 351
  * lines and 49 branches because the decision and the SQL that acts on it were
- * interleaved; this is the decision, on its own, where it can be enumerated
- * exhaustively without a queue, a webhook or a deployment.
+ * interleaved; lifting the decision out took it to 322 and 36, and put the rules
+ * somewhere they can be enumerated exhaustively without a queue, a webhook or a
+ * deployment. The four batch arms are what is left, and they are the reason it
+ * is still long.
  *
  * Providers redeliver, and they redeliver OUT OF ORDER. Every rule here exists
  * because some ordering of real events would otherwise move money backwards.

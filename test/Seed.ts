@@ -24,6 +24,11 @@ import * as Effect from "effect/Effect";
 /**
  * Inline one value into SQL.
  *
+ * `wrangler` is a declared devDependency even though nothing imports it: it is
+ * spawned as a binary here, so leaving it undeclared meant `bunx` resolved it on
+ * demand — a fresh checkout paid an install inside this helper, and failed the
+ * test when that install returned non-zero.
+ *
  * `wrangler d1 execute` takes only `--command`, with NO parameter binding — so
  * unlike every query in `src/`, this helper has to interpolate. It is confined to
  * tests and fed values this suite produced (order numbers, Stripe session ids,

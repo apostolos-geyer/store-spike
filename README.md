@@ -10,12 +10,12 @@ Pinned to `platform/`'s versions — effect `4.0.0-beta.101`, drizzle-orm
 ```sh
 bun install
 bun run db:generate                          # regenerate migrations after a schema edit
-bun run test:unit                            # no deploy, no network — ~80ms
+bun run test:unit                            # no deploy, no network — ~85ms
 ALCHEMY_PROFILE=dev bun test                 # deploy → assert → destroy
 NO_DESTROY=1 ALCHEMY_PROFILE=dev bun test    # keep the stack up between runs
 ```
 
-**Status: 147 unit and contract tests pass in ~80ms; 30/30 integration tests
+**Status: 153 unit and contract tests pass in ~85ms; 30/30 integration tests
 pass against a live deployment — 13 operator, 9 settlement, 8 end-to-end through
 Stripe itself, all green after the correctness fixes below. `tsc --noEmit` clean
 under `noUncheckedIndexedAccess`, `noUnusedLocals` and `noUnusedParameters`.**
@@ -34,8 +34,8 @@ Two tiers that need nothing, and two that need a deployment.
 
 | Tier | Where | Cost | What it proves |
 |---|---|---|---|
-| Unit | `test/unit/` | ~80ms | Pricing rules, guard classification, the late-event matrix, cursor codecs, version labels, actor attribution, ULID monotonicity |
-| Contract | `test/unit/contracts.test.ts` | — | A value the domain produces survives encode/decode through the real `Schema`, and the schema refuses what it should |
+| Unit | `test/unit/` | ~85ms | Pricing rules, guard classification, the late-event matrix, cursor codecs, version derivation, actor attribution, ULID monotonicity |
+| Contract | `test/unit/contracts.test.ts` | ~85ms | A value the domain produces survives encode/decode through the real `Schema`, and the schema refuses what it should |
 | Integration | `test/store.integ.test.ts`, `test/settlement.integ.test.ts` | ~6 min | Real D1 batches: reservation atomicity, guard compensation, the idempotency ledger |
 | End-to-end | `test/stripe.e2e.test.ts` | ~4 min | Money actually moves, against Stripe itself |
 
@@ -81,7 +81,7 @@ statements instead of committing, but it imports drizzle and the database
 handle — so it could not have become `core/` by renaming.
 
 ```
-alchemy.run.ts              ONE stack. Catalog + Edge get URLs; the rest are bindings.
+alchemy.run.ts              ONE stack. Only Commerce has no address.
 src/
   core/                     ZERO IMPORTS — decisions, no I/O, no drizzle, no Effect
     pricing.ts              cart rules; what a buyer is charged
@@ -104,12 +104,14 @@ src/
     Storefront.ts           active-release public reads
     Media.ts                ingest + serve
   Services/                 CAPABILITIES — Context.Service + static layer
-    Database.ts  Ids.ts  Blobs.ts  Audit.ts  Payments.ts  PaymentsFake.ts
+    Database.ts  Ids.ts  Blobs.ts  Audit.ts
+    Payments.ts             the port; PaymentsFake + PaymentsStripe implement it
+    PaymentsProvider.ts     picks one per deployment; StripeConfig.ts reads the keys
   Workers/
-    Catalog.ts              public storefront reads + media streaming
-    Commerce.ts             url:false, the 27-method operator surface
-    Settlement.ts           url:false, webhook + queue + cron
-    Edge.ts                 the trust boundary: RpcServer.toHttpEffect
+    Catalog.ts              addressed — storefront reads + media streaming
+    Commerce.ts             url:false — the 27-method operator surface
+    Settlement.ts           addressed — a provider cannot call a binding
+    Edge.ts                 addressed — the trust boundary: RpcServer.toHttpEffect
 ```
 
 ## The two boundaries, and why they use different tools
@@ -149,20 +151,26 @@ Corollary: **do not annotate an RPC method's return as `Effect<A>`**. `MainRpc`
 permits `RuntimeContext` in a method's requirement and the bridge supplies it per
 event; pinning `R` to `never` is what forces a phantom discharge.
 
-### 2. Two database handles, because `batch` is the only atomicity primitive
+### 2. One database handle, because `batch` is the only atomicity primitive
 
 `EffectSQLiteD1Database` exposes no `batch`, and `@effect/sql-d1` sets
 `transactionAcquirer` to `Effect.die("transactions are not supported in D1")`.
 Two invariants ride on batching:
 
-- **Audit** — the mutation and its `store_operator_event` row commit together.
+- **Audit** — the mutation and its `command_event` row commit together.
 - **Reservation** — per-statement `meta.changes` is the only trustworthy signal
   that a guarded conditional UPDATE matched.
 
-So `Drizzle.D1` serves reads and the classic `drizzle-orm/d1` handle serves the
-batch path. Measured, not assumed: **a zero-row UPDATE does not abort a batch**,
-which is why the explicit compensation in `Reservations.ts` is load-bearing
-rather than defensive.
+So everything that mutates goes through the classic `drizzle-orm/d1` handle —
+and once reads sit beside those writes there is nothing left for a second handle
+to do. **`Drizzle.D1` is not used at all.** An earlier draft resolved it into
+`Runtime.handles` and never consumed it; the value and the paragraph describing
+it are both gone.
+
+Measured, not assumed: **a zero-row UPDATE does not abort a batch**, which is
+why the explicit compensation in `Checkout.ts` is load-bearing rather than
+defensive, and why `Audit.command` accepts a list of guarded statement indices
+to check after the fact.
 
 ### 3. Capabilities get services; domain cores get arguments
 
@@ -216,8 +224,10 @@ it rather than pretending it is synchronous.
 
 ## The tests
 
-Ten invariants, not change-detectors. Each pins a property that must survive a
+Invariants, not change-detectors. Each pins a property that must survive a
 refactor; none assert that one function calls another.
+
+**Operator surface** — `store.integ.test.ts`
 
 | | Invariant |
 |---|---|
@@ -230,7 +240,29 @@ refactor; none assert that one function calls another.
 | G | A deletion token is single-use and cannot be redirected |
 | H | Media is served by id and its bytes round-trip |
 | I | A malformed cursor is a typed domain error, never a 500 |
-| J | A negative price is refused at encode time, before any handler |
+| J | The schema rejects a malformed payload before any handler runs |
+| K | Publishing needs no version, and republishing derives the next one |
+| L | A double-clicked Buy reserves stock once |
+| M | Media stops being served once its product is pulled from sale |
+
+**Settlement** — `settlement.integ.test.ts`
+
+| | Invariant |
+|---|---|
+| S1 | An unmatched event retries, then is written off rather than retried forever |
+| S2 | An unmapped event type is ignored, and a replay is a duplicate |
+| S3 | A test-mode event never settles a live deployment |
+| S5 | The sweep is idempotent and reports honestly on an empty database |
+| S6 | Amounts are copied onto the order, and only from its own session |
+| S7 | An event for the order's OWN session writes the charged amounts through |
+| S8 | A refund stops the order looking shippable and returns its stock |
+| S9 | Releasing an order twice restores its stock once |
+| S10 | A PARTIAL refund records the money without killing the order |
+
+**Through Stripe itself** — `stripe.e2e.test.ts`: place → pay → settle, expiry →
+cancel, unsigned webhook → 400, a subscribed run refusing at its cap, fulfil and
+read the merged timeline, refund via a real charge, and the aggregate cap
+refusing across two sizes of one product.
 
 ## Stripe: the seam, and the three environments
 
@@ -279,35 +311,49 @@ alchemy dev --stage dev            # starts the forwarder, threads the secret
 
 ## Dropping this into `platform/`
 
-1. Copy `src/` and `migrations/` in; the versions already match.
-2. Replace `actorFrom` in `Workers/Edge.ts` with a real session read — that one
-   function is the entire authorization seam.
-3. Swap `Services/PaymentsFake.ts` for a real adapter behind the same
-   `Payments` service. Nothing in `Domain/` changes.
-4. Point the operator console at `CommerceWorker` with `bindWorker`; it needs no
-   HTTP surface.
+The versions already match the platform catalog, and this typechecks clean under
+TypeScript `7.0.2` — the catalog's pin, and the Go rewrite — as well as 5.7.
+
+1. **`apps/platform.store/`**, with `src/core/` landing in the `app-core` zone
+   and the stack moving to `stacks/platform.store/`. `.fallowrc.jsonc` here
+   already mirrors the platform's rule severities, so `fallow` is clean going in.
+2. **Replace `SPIKE_ACTOR` in `Workers/Edge.ts`** with a Cloudflare Access
+   identity read, modelled on `platform.inbox/workers/lib/access.ts`. That one
+   constant is the entire authorization seam.
+3. **Derive the buyer** in `Storefront.rpc.ts` from the session rather than
+   accepting `customerId` and `email` on the payload, matching how `meta.actor`
+   is minted on the operator side.
+4. **Give Catalog an RPC shape on its tag** — `Cloudflare.Worker<Catalog, {…}>`
+   with `.make()` supplying the implementation — so a storefront binds it with
+   `bindWorker`, or with `Catalog.ref(…)` across a stack boundary. Then retire
+   the HTTP read routes, keeping only `/media/:id`.
+5. **Point the operator console at `CommerceWorker`** with `bindWorker`; it needs
+   no HTTP surface and must not get one.
+
+`Services/PaymentsFake.ts` stays. It is D1-backed and the provider is chosen per
+deployment by `environmentFor`, so it is what a stage without Stripe credentials
+runs on — not a thing to swap out.
 
 ## Not covered
 
-- **Signature verification is written but never executed.** `parseEvent` uses
-  `constructEventAsync` with the SubtleCrypto provider and typechecks against the
-  real SDK, but no test has run a signed payload through it — that needs
-  `stripe listen` and a Stripe account. si tested it
-  (`rejects unsigned requests without enqueueing`).
-- **Checkout has no end-to-end test.** The reservation guard, compensation and
-  session attach are implemented and typechecked, but nothing drives a full
-  cart → pay → fulfil purchase, because checkout is not on the operator surface
-  and the fake cannot complete a payment.
-- **Stock release on a failed payment is implemented but untested.** The branch
-  restores every line's stock in the same batch as the cancellation. Verifying it
-  needs a real order carrying a session, which needs checkout — see above. A test
-  that staged the state without observing the release was deleted rather than
-  left in place asserting nothing.
-- The queue consumer is deployed and wired but asserted only through
-  `replayEvent`, which runs the same `settle`. Nothing tests the queue's own
-  ack/retry dispatch — si had four cases there
-  (`dispatches concurrently`, `isolates a throwing message`, `retryable → retry
-  with backoff`, `backoff escalates, capped at 300s`).
+Three items that used to sit here — signature verification, checkout end to end,
+and stock release on a failed payment — are now covered by `stripe.e2e.test.ts`
+and `settlement.integ.test.ts`. What remains:
+
+- **The queue's own dispatch.** The consumer is deployed and wired, but every
+  assertion reaches `settle` through `replayEvent`, which calls the same
+  function. Nothing tests the queue's ack/retry behaviour itself: concurrent
+  dispatch, isolating a throwing message, or the backoff schedule. The outcome
+  mapping is unit-tested; the transport around it is not.
+- **The cron.** `sweep` is asserted through `runSweep`. That the schedule fires
+  is taken on trust from the deployment.
+- **Recovery from a torn checkout.** The release marker makes a crash between
+  checkout's batches fail closed — stock stranded rather than invented — but
+  nothing drives the crash. Proving it needs fault injection the suite has no
+  way to express.
+- **Live Stripe.** Everything runs in test mode. Tax registration, a registered
+  webhook endpoint and live keys are account state, and no test can stand in for
+  them — see *Before this takes real money*.
 - Splitting Catalog and Commerce onto separate databases. `Deletion.ts` is the
   module that would pay for it — it plans cascades by querying catalog and order
   history together — so make that call after reading it.

@@ -44,24 +44,18 @@ export const MediaBucket = Cloudflare.R2.Bucket(
 /**
  * Resolve every handle from the bindings.
  *
- * `effectDb` is a VALUE — `Drizzle.D1` returns a chainable proxy whose client is
- * deferred to first query, so it is safe to build at init and use per event.
- *
- * `databaseLayer` and `blobsLayer` are LAYERS. Both need a raw binding, `.raw`
+ * BOTH ARE LAYERS, and for the same reason: each needs a raw binding, `.raw`
  * carries a `RuntimeContext` requirement, and that context only exists PER
- * EVENT — so they are built inside handlers. This is why no `uncoloured` /
- * `RuntimeContext.phantom` discharge appears anywhere in this codebase.
+ * EVENT — so they are built inside handlers rather than in a Worker's init
+ * closure. This is why no `uncoloured` / `RuntimeContext.phantom` discharge
+ * appears anywhere in this codebase.
  */
 export const handles = Effect.gen(function* () {
   const database = yield* StoreDatabase;
   const d1 = yield* Cloudflare.D1.QueryDatabase(database);
-  const effectDb = yield* Drizzle.D1(d1);
-
   const bucket = yield* Cloudflare.R2.ReadWriteBucket(MediaBucket);
 
   return {
-    effectDb,
-    raw: d1.raw,
     databaseLayer: Database.layer(d1.raw),
     blobsLayer: Blobs.layer(bucket.raw),
   };

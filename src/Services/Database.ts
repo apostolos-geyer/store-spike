@@ -1,14 +1,20 @@
 /**
- * The D1 seam, and the reason the store carries TWO handles.
+ * The D1 seam, and why it is the CLASSIC drizzle handle rather than the Effect
+ * one.
  *
- * `Drizzle.D1` (the `drizzle-orm/effect-d1` driver) is the right default: its
- * queries are already Effects, its client is deferred to first use and memoised
- * per execution, and it needs no `RuntimeContext` discharge. But it exposes no
- * `batch`, and its `transaction` is unusable on D1 — `@effect/sql-d1` sets
- * `transactionAcquirer` to `Effect.die("transactions are not supported in D1")`.
+ * `Drizzle.D1` (the `drizzle-orm/effect-d1` driver) looks like the right
+ * default: its queries are already Effects, its client is deferred to first use
+ * and memoised per execution, and it needs no `RuntimeContext` discharge. But it
+ * exposes no `batch`, and its `transaction` is unusable on D1 — `@effect/sql-d1`
+ * sets `transactionAcquirer` to
+ * `Effect.die("transactions are not supported in D1")`.
  *
- * A batch is the store's ONLY atomicity primitive, and two invariants depend on
- * it outright:
+ * Since a batch is the only atomicity primitive there is, everything that
+ * mutates has to go through the classic handle — and once reads sit beside
+ * those writes there is nothing left for a second handle to do. So the store
+ * carries ONE, and `Drizzle.D1` is not used at all.
+ *
+ * Two invariants depend on batching outright:
  *
  *  - AUDIT: the domain mutation and its `command_event` insert commit
  *    together, or neither does.

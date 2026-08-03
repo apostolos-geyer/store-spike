@@ -22,10 +22,16 @@
 
   "ignorePatterns": ["migrations/**", ".alchemy/**"],
 
-  // Mirrors the platform's own list. Both are alchemy peer dependencies pulled
-  // in transitively rather than imported here, so removing them would break a
-  // deploy that currently works.
-  "ignoreDependencies": ["@effect/platform-bun", "@effect/platform-node"],
+  // Declared but never imported, so no import graph can see them.
+  //
+  //  - The two @effect/platform packages mirror the platform's own list: alchemy
+  //    peer dependencies pulled in transitively, so removing them would break a
+  //    deploy that currently works.
+  //  - wrangler is a BINARY, spawned by `test/Seed.ts` to run raw SQL that the
+  //    public surface cannot express. It was previously left undeclared and
+  //    resolved on demand by `bunx`, which meant a fresh checkout paid an
+  //    install inside a test — and failed the test when that install did.
+  "ignoreDependencies": ["@effect/platform-bun", "@effect/platform-node", "wrangler"],
 
   // The gates the platform runs at `error`. Matching them here means a finding
   // surfaces during development rather than on arrival.

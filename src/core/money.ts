@@ -42,7 +42,13 @@ export const qualifiesForFreeShipping = (subtotalCents: number): boolean =>
 export const isNonNegativeInt = (value: number): boolean =>
   Number.isInteger(value) && value >= 0;
 
-/** Sizes sort by this order, not lexicographically — "10" before "9", XS before S. */
+/**
+ * The garment scale, in wearing order rather than alphabetical — XS before S,
+ * L before XL. Anything outside this list sorts after all of it, and ties break
+ * LEXICOGRAPHICALLY: `"10"` lands before `"9"`, and so does `"11"`, which
+ * numeric ordering would not do. That is fine for the labels this store uses
+ * and would not be if numeric sizes ever became real.
+ */
 export const SIZE_ORDER = ["XS", "S", "M", "L", "XL", "2XL", "3XL"] as const;
 
 export const sortBySize = <T extends { size: string }>(rows: readonly T[]): T[] => {
