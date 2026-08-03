@@ -15,15 +15,10 @@ ALCHEMY_PROFILE=dev bun test                 # deploy → assert → destroy
 NO_DESTROY=1 ALCHEMY_PROFILE=dev bun test    # keep the stack up between runs
 ```
 
-**Status: 137 unit and contract tests pass in ~80ms; 30 integration tests pass
-against a live deployment — 13 operator, 9 settlement, 8 end-to-end through
-Stripe itself. `tsc --noEmit` clean under `noUncheckedIndexedAccess`,
-`noUnusedLocals` and `noUnusedParameters`.**
-
-⚠️ **The integration suite has not been re-run since the correctness fixes
-below.** The unit and contract tiers cover the decisions; reservation atomicity,
-the audit protocol and settlement against real Stripe are integration-only and
-need a deploy to confirm. Run `ALCHEMY_PROFILE=dev bun test` before shipping.
+**Status: 137 unit and contract tests pass in ~80ms; 30/30 integration tests
+pass against a live deployment — 13 operator, 9 settlement, 8 end-to-end through
+Stripe itself, all green after the correctness fixes below. `tsc --noEmit` clean
+under `noUncheckedIndexedAccess`, `noUnusedLocals` and `noUnusedParameters`.**
 
 An adversarial review pass raised 22 findings; 19 survived independent
 refutation. **All are now closed**, along with the residue conceded inside two

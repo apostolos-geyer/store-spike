@@ -212,6 +212,18 @@ export class Audit extends Context.Service<
          * unconsumed and the caller may retry. That preserves the contract
          * stated at the top of this file: a recorded event always means a
          * success.
+         *
+         * NOT AIRTIGHT, and worth stating rather than implying. The delete is a
+         * SECOND batch, so a process that dies between the two leaves a success
+         * row for a mutation that never happened — and a replay would serve it.
+         * That window cannot be closed from here: the mutation and its event
+         * must commit together (invariant 2), and whether a guard took is only
+         * knowable after they have. A core that cannot tolerate the window
+         * should run its own batch through {@link claimed} instead, the way
+         * checkout does.
+         *
+         * It is still strictly better than the alternative it replaced, which
+         * recorded the fiction unconditionally rather than in a crash window.
          */
         const lost = firstLostGuard(outcome.guards, results);
         if (lost) {
