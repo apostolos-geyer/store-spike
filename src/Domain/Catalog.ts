@@ -445,7 +445,8 @@ export const publishProduct = Effect.fn("Catalog.publishProduct")(function* (
   if (input.version !== undefined && !isValidVersion(input.version)) {
     return { failure: err("invalid_version") };
   }
-  const version = input.version ?? nextVersion(existing.map((release) => release.version));
+  const version =
+    input.version ?? nextVersion(existing.map((release) => release.version), input.bump);
 
   // UNIQUE(product_id, version) still holds, so a name that is already taken is
   // refused rather than aborting the batch on a constraint violation.

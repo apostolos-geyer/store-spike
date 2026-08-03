@@ -430,6 +430,12 @@ export class OperatorRpcs extends RpcGroup.make(
        * label for humans, not a key the caller has to invent on every publish.
        */
       version: Schema.optional(Schema.String),
+      /**
+       * WHICH PART MOVES when the version is derived. Ignored when `version` is
+       * supplied, because then the caller has already said. Defaults to `minor`,
+       * which is what a release usually is.
+       */
+      bump: Schema.optional(Schema.Literals(["major", "minor", "patch"])),
     }),
     success: Schema.Struct({
       releaseId: Schema.String,

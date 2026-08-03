@@ -20,26 +20,42 @@ const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 export const isValidVersion = (value: string): boolean => SEMVER_PATTERN.test(value);
 
+/** Which part of the label moves. A release is any of the three. */
+export type Bump = "major" | "minor" | "patch";
+
+/** The first release a product ever publishes. */
+const FIRST_VERSION = "1.0.0";
+
 /**
  * The next version for a product, derived from what it has already published.
  *
- * Bumping the MINOR keeps the shape recognisably semver without pretending
- * these numbers carry compatibility meaning — they describe a garment, not an
- * API.
+ * DERIVED FROM THE LATEST, not from the largest component seen. The previous
+ * version read only the minor and pasted it under a hardcoded major, which was
+ * wrong in both directions: publishing after a hand-supplied `2.0.0` produced
+ * `1.1.0` — going backwards — and a product whose only release was `2.3.0`
+ * produced `1.4.0`, a number bearing no relation to anything.
  *
- * KNOWN LIMIT, pinned by test: the major is hardcoded to `1` and only the minor
- * is read. Because `publishProduct.version` is an optional input, an operator
- * who supplies `2.0.0` by hand makes the next DERIVED version `1.x.0` — lower
- * than its predecessor. Harmless while versions are labels; it would not be if
- * anything ever ordered on them.
+ * `minor` is the default because a release usually is one: a new colourway, a
+ * restock, a corrected photo. `patch` is for a fix to a release already out
+ * (a typo in the description), and `major` for a redesign an operator wants
+ * marked as such. None of it carries compatibility meaning — these describe a
+ * garment, not an API — but the shape should still be honest.
+ *
+ * Unparseable versions are ignored rather than coerced, so one bad row written
+ * by hand cannot drag every future derivation down with it.
  */
-export const nextVersion = (published: readonly string[]): string => {
-  let highest = 0;
-  for (const version of published) {
-    const minor = Number(version.split(".")[1] ?? 0);
-    if (Number.isFinite(minor) && minor > highest) highest = minor;
-  }
-  return published.length === 0 ? "1.0.0" : `1.${highest + 1}.0`;
+export const nextVersion = (published: readonly string[], bump: Bump = "minor"): string => {
+  const latest = [...published].filter(isValidVersion).sort(compareVersions).pop();
+  if (latest === undefined) return FIRST_VERSION;
+
+  const parts = latest.split(".").map(Number);
+  const major = parts[0] ?? 0;
+  const minor = parts[1] ?? 0;
+  const patch = parts[2] ?? 0;
+
+  if (bump === "major") return `${major + 1}.0.0`;
+  if (bump === "patch") return `${major}.${minor}.${patch + 1}`;
+  return `${major}.${minor + 1}.0`;
 };
 
 /** Compare two core SemVers. Returns <0, 0, or >0. */

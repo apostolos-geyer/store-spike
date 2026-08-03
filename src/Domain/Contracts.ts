@@ -14,6 +14,7 @@
  *    errors are both {@link DomainResult} values.
  */
 import type * as Rpc from "./Rpc.ts";
+import type { Bump } from "../core/versions.ts";
 
 // ── Result envelope ──────────────────────────────────────────────────────────
 
@@ -50,6 +51,7 @@ export interface OperatorCall<T> {
 export {
   isValidVersion,
   nextVersion,
+  type Bump,
 } from "../core/versions.ts";
 
 // ── Product DTOs ─────────────────────────────────────────────────────────────
@@ -156,6 +158,8 @@ export interface PublishProductInput {
    * Supply it only when you actually want to name a release something specific.
    */
   version?: string;
+  /** Which part of the derived label moves. Ignored when `version` is given. */
+  bump?: Bump;
 }
 
 export interface PutVariantInput {
