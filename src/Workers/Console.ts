@@ -8,8 +8,8 @@
  * their caller is a BROWSER, and a payload crossing that boundary has to be
  * decoded before a handler sees it. Neither is what a bound sibling should do.
  *
- * This worker is what a bound sibling actually looks like. It holds one binding
- * to Commerce and calls it as plain methods — `commerce.publishProduct(call)` —
+ * This worker is what a bound sibling actually looks like. It binds Commerce
+ * and calls it as plain methods — `commerce.publishProduct(call)` —
  * with no schema, no serialization and no network hop: Cloudflare moves the
  * arguments by structured clone inside the account. That is the "schemaless RPC
  * over a binding" half of alchemy's guidance, and the reason Commerce carries

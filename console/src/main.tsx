@@ -36,7 +36,7 @@ const Shell = () => {
             Shop
           </Link>
         </nav>
-        <span className="note">one worker · two bindings · no HTTP to Commerce</span>
+        <span className="note">one worker · three bindings · no HTTP to Commerce</span>
       </header>
       <main>
         <Outlet />
