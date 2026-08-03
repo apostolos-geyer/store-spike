@@ -197,10 +197,11 @@ export const layer = Layer.effect(
         amounts: (parsed.amounts as ProviderEvent["amounts"]) ?? null,
         paymentIntentId:
           typeof parsed.paymentIntentId === "string" ? parsed.paymentIntentId : null,
+        refund: (parsed.refund as ProviderEvent["refund"]) ?? null,
       } satisfies ProviderEvent;
     });
 
-    return Payments.of({ createSession, retrieve, expire, parseEvent });
+    return Payments.of({ currency: "cad", createSession, retrieve, expire, parseEvent });
   }),
 );
 

@@ -28,7 +28,7 @@ import * as Effect from "effect/Effect";
 
 import { Database, query, type DbStatement } from "../Services/Database.ts";
 import { Payments } from "../Services/Payments.ts";
-import { restoreStatements } from "./Reservations.ts";
+import { releaseStatements } from "./Reservations.ts";
 import { customerOrder, orderItem } from "./Schema.ts";
 
 /** How long an order may hold stock with no session before it is presumed abandoned. */
@@ -69,7 +69,7 @@ export const sweep = Effect.fn("Reconcile.sweep")(function* (): Effect.fn.Return
     const lines = yield* linesOf(orderId);
     yield* Effect.orDie(
       database.run([
-        ...restoreStatements(db, lines),
+        ...releaseStatements(db, orderId, lines, now),
         db
           .update(customerOrder)
           .set({ status: "cancelled", updatedAt: now })

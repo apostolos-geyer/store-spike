@@ -120,7 +120,7 @@ export const ShippingAddress = Schema.Struct({
   city: Schema.String,
   region: Schema.String,
   postal: Schema.String,
-  country: Schema.Literal("CA"),
+  country: Schema.Literals(["CA", "US"]),
   phone: Schema.optional(Schema.String),
 });
 
@@ -150,6 +150,7 @@ export const OrderDetail = Schema.Struct({
   taxCents: Schema.Number,
   totalCents: Schema.Number,
   currency: Schema.String,
+  refundedCents: Schema.Number,
   shipCountry: Schema.String,
   shipping: Schema.NullOr(ShippingAddress),
   carrier: Schema.NullOr(Schema.String),
@@ -333,6 +334,14 @@ export const ProviderEventPayload = Schema.Struct({
     }),
   ),
   paymentIntentId: Schema.NullOr(Schema.String),
+  /** Present only on a reversal — see `ProviderEvent.refund`. */
+  refund: Schema.NullOr(
+    Schema.Struct({
+      amountRefundedCents: Schema.Number,
+      chargeAmountCents: Schema.Number,
+      fullyRefunded: Schema.Boolean,
+    }),
+  ),
 });
 
 export const SweepResult = Schema.Struct({

@@ -102,6 +102,21 @@ export interface ProviderEvent {
     readonly currency: string;
   } | null;
   readonly paymentIntentId: string | null;
+  /**
+   * Present only on a REVERSAL, and the distinction it carries is the whole
+   * point: providers emit the same event type for a partial refund as for a full
+   * one. Without the amounts there is no way to tell a courtesy refund from a
+   * cancellation, and the only safe reading — treat every refund as total — is
+   * the one that cancels live orders and re-lists goods the customer keeps.
+   *
+   * `amountRefundedCents` is CUMULATIVE on the charge, so writing it absolutely
+   * is naturally idempotent under redelivery.
+   */
+  readonly refund: {
+    readonly amountRefundedCents: number;
+    readonly chargeAmountCents: number;
+    readonly fullyRefunded: boolean;
+  } | null;
 }
 
 export class PaymentsUnavailable extends Schema.TaggedErrorClass<PaymentsUnavailable>()(
@@ -117,6 +132,11 @@ export class EventNotVerified extends Schema.TaggedErrorClass<EventNotVerified>(
 export class Payments extends Context.Service<
   Payments,
   {
+    /**
+     * Minor-unit currency this provider quotes in. Read at order-write time so
+     * the row records what it was actually priced in.
+     */
+    readonly currency: string;
     createSession(input: {
       readonly orderId: string;
       readonly orderNumber: string;

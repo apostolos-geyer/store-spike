@@ -14,9 +14,14 @@ ALCHEMY_PROFILE=dev bun test                 # deploy → assert → destroy
 NO_DESTROY=1 ALCHEMY_PROFILE=dev bun test    # keep the stack up between runs
 ```
 
-**Status: 22/22 integration tests pass against a live deployment — 10 operator,
-7 settlement, 5 end-to-end through Stripe itself. `tsc --noEmit` clean, verified
+**Status: 26/26 integration tests pass against a live deployment — 10 operator,
+9 settlement, 7 end-to-end through Stripe itself. `tsc --noEmit` clean, verified
 from a destroyed stack on a single cold run.**
+
+An adversarial review pass raised 22 findings; 19 survived independent
+refutation. Eleven are fixed, **eight remain open** — read
+[REVIEW.md](./REVIEW.md) before shipping this. Five of the six review lenses hit
+their finding cap, so that register is a floor, not a ceiling.
 
 Setup is `stripe login` and nothing else. The CLI's own test key and signing
 secret are read at deploy time, so no Stripe credential is pasted into a shell

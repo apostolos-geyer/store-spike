@@ -33,7 +33,7 @@ import * as Effect from "effect/Effect";
 
 import { Database, query, type DbStatement } from "../Services/Database.ts";
 import type { PaymentStatus, ProviderEvent } from "../Services/Payments.ts";
-import { restoreStatements } from "./Reservations.ts";
+import { releaseStatements } from "./Reservations.ts";
 import { customerOrder, orderItem, paymentEvent } from "./Schema.ts";
 
 export type Outcome = "applied" | "duplicate" | "ignored" | "retryable" | "dead";
@@ -218,11 +218,32 @@ export const settle = Effect.fn("Settlement.settle")(function* (
    * order — but money coming back on an order already out the door is precisely
    * the case an operator most needs recorded, so it is exempt.
    */
-  const alreadyTerminal =
-    !reversing &&
-    (TERMINAL.has(order.status) ||
+  /**
+   * A LATE EVENT NEVER MOVES AN ORDER BACKWARDS.
+   *
+   * `cancelled` is terminal against BOTH checkout classes, not just settling.
+   * The failing arm was missing, and its absence was not theoretical: the sweep
+   * expires a session and releases the order, the provider then emits
+   * `checkout.session.expired` BECAUSE we expired it, that event has a fresh id
+   * so it is not a duplicate, and the failing branch cancelled-and-released an
+   * order that was already cancelled and released.
+   *
+   * `paymentStatus === "paid"` is terminal against settling, so a redelivered
+   * `completed` carrying its original unpaid snapshot cannot demote a settled
+   * order back to `processing`. An async success arrives while the status is
+   * `processing`, so it still passes.
+   *
+   * Reversals bypass only the shipped/delivered arm — money coming back on a
+   * dispatched order is exactly what an operator must be told. They are safe to
+   * re-apply because the release is idempotent and the refunded total is written
+   * absolutely.
+   */
+  const alreadyTerminal = reversing
+    ? false
+    : TERMINAL.has(order.status) ||
+      ((settling || failing) && order.status === "cancelled") ||
       (failing && order.status === "paid") ||
-      (settling && order.status === "cancelled"));
+      (settling && order.paymentStatus === "paid");
   if (alreadyTerminal) {
     yield* Effect.orDie(database.run([record("ignored", order.id)]));
     return { outcome: "ignored" as const, orderNumber: order.orderNumber };
@@ -245,9 +266,26 @@ export const settle = Effect.fn("Settlement.settle")(function* (
     const disputed = event.type.startsWith("charge.dispute");
     const gone = order.status === "shipped" || order.status === "delivered";
 
-    const lines = disputed || gone
-      ? []
-      : yield* query(() =>
+    /**
+     * PARTIAL OR TOTAL, and the answer changes everything.
+     *
+     * A provider emits the same event type for a $10 courtesy refund as for a
+     * full one — the charge just reports a smaller `amount_refunded`. Treating
+     * every refund as total cancels an order the customer is still owed, re-lists
+     * goods they are keeping, and cannot be undone: `cancelled` has no outgoing
+     * transitions, so the order can never be shipped.
+     *
+     * Absent refund detail is read as PARTIAL. Recording money returned without
+     * killing the order is recoverable by an operator; the reverse is not.
+     */
+    const total = event.refund?.fullyRefunded === true;
+    const refundedCents = event.refund?.amountRefundedCents ?? 0;
+
+    // Stock goes back only when the order actually ends, and only when nothing
+    // has shipped. The release is guarded, so a redelivery restores nothing.
+    const ends = total && !disputed && !gone;
+    const lines = ends
+      ? yield* query(() =>
           db
             .select({
               variantId: orderItem.variantId,
@@ -257,16 +295,24 @@ export const settle = Effect.fn("Settlement.settle")(function* (
             })
             .from(orderItem)
             .where(eq(orderItem.orderId, order.id)),
-        );
+        )
+      : [];
 
     yield* Effect.orDie(
       database.run([
-        ...restoreStatements(db, lines),
+        ...(ends ? releaseStatements(db, order.id, lines, now) : []),
         db
           .update(customerOrder)
           .set({
-            paymentStatus: disputed ? "disputed" : "refunded",
-            ...(disputed || gone ? {} : { status: "cancelled" as const }),
+            paymentStatus: disputed
+              ? "disputed"
+              : total
+                ? "refunded"
+                : "partially_refunded",
+            ...(ends ? { status: "cancelled" as const } : {}),
+            // ABSOLUTE, because the provider reports a running total — so a
+            // redelivered event writes the same number rather than doubling it.
+            ...(disputed ? {} : { refundedCents }),
             updatedAt: now,
           })
           .where(eq(customerOrder.id, order.id)) as unknown as DbStatement,
@@ -402,7 +448,7 @@ export const settle = Effect.fn("Settlement.settle")(function* (
 
   yield* Effect.orDie(
     database.run([
-      ...restoreStatements(db, lines),
+      ...releaseStatements(db, order.id, lines, now),
       db
         .update(customerOrder)
         .set({

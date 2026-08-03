@@ -134,6 +134,7 @@ const settle = (
     paymentStatus?: "unpaid" | "paid" | "no_payment_required" | null;
     livemode?: boolean;
     paymentIntentId?: string | null;
+    refund?: { amountRefundedCents: number; chargeAmountCents: number; fullyRefunded: boolean } | null;
     amounts?: Amounts | null;
     shipCountry?: string | null;
   },
@@ -153,6 +154,7 @@ const settle = (
         shipCountry: event.shipCountry ?? null,
         amounts: event.amounts ?? null,
         paymentIntentId: event.paymentIntentId ?? null,
+        refund: event.refund ?? null,
       },
       attempt,
     }),
@@ -531,6 +533,8 @@ test(
       type: "charge.refunded",
       sessionId: null,
       paymentIntentId: intent,
+      // FULL: the whole charge came back, so the order ends and stock returns.
+      refund: { amountRefundedCents: 3616, chargeAmountCents: 3616, fullyRefunded: true },
     });
     show("S8 · refunded", reversed);
     expect(reversed.outcome).toBe("applied");
@@ -543,6 +547,207 @@ test(
     expect(after.paymentStatus).toBe("refunded");
     // Nothing shipped, so the unit is sellable again.
     expect(yield* variantStock(edgeUrl, productId, variantId)).toBe(4);
+  }),
+  { timeout: TEST_TIMEOUT },
+);
+
+test(
+  "S9 · releasing an order twice restores its stock once",
+  Effect.gen(function* () {
+    const { edgeUrl, catalogUrl } = yield* stack;
+
+    const slug = `release-${RUN}-${(counter += 1)}`;
+    const { productId, variantId } = yield* withClient(edgeUrl, (client) =>
+      Effect.gen(function* () {
+        const created = yield* client.createProduct({
+          commandId: cmd("create"),
+          slug,
+          title: `Release ${slug}`,
+          priceCents: 1500,
+        });
+        yield* client.ingestProductMedia({
+          commandId: cmd("media"),
+          productId: created.productId,
+          bytesBase64: PIXEL_PNG,
+          contentType: "image/png",
+          alt: "cover",
+          role: "cover",
+        });
+        const variant = yield* client.putVariant({
+          commandId: cmd("variant"),
+          productId: created.productId,
+          size: "M",
+          sku: `${slug}-M`,
+          stock: 5,
+        });
+        yield* client.publishProduct({
+          commandId: cmd("publish"),
+          productId: created.productId,
+          expectedRevision: 1,
+          version: "1.0.0",
+        });
+        return { productId: created.productId, variantId: variant.variantId };
+      }),
+    );
+
+    const placed = yield* withShopper(catalogUrl, (client) =>
+      client.placeOrder({
+        commandId: cmd("buy"),
+        email: `release-${RUN}@spike.local`,
+        destination: "CA",
+        items: [{ variantId, quantity: 2 }],
+      }),
+    );
+    expect(yield* variantStock(edgeUrl, productId, variantId)).toBe(3);
+
+    /**
+     * THE REAL SEQUENCE, not a contrived one. The reconcile sweep expires a
+     * stale session and releases the order — and expiring the session is what
+     * makes the provider emit `checkout.session.expired`. That event arrives
+     * with a FRESH id, so the replay key does not catch it, and it lands on an
+     * order that is already cancelled and already released.
+     *
+     * Before the release marker existed, this restored the same two units a
+     * second time. It fires on every abandoned cart the sweep touches, with no
+     * concurrency and no operator involvement — the store simply invents stock.
+     */
+    const first = yield* settle(edgeUrl, {
+      id: `evt-expired-a-${RUN}`,
+      type: "checkout.session.expired",
+      sessionId: placed.sessionId,
+      paymentStatus: "unpaid",
+    });
+    expect(first.outcome).toBe("applied");
+    expect(yield* variantStock(edgeUrl, productId, variantId)).toBe(5);
+
+    // A second, DIFFERENT expiry event for the same order — not a duplicate by
+    // event id, so only the release marker can stop it.
+    const second = yield* settle(edgeUrl, {
+      id: `evt-expired-b-${RUN}`,
+      type: "checkout.session.expired",
+      sessionId: placed.sessionId,
+      paymentStatus: "unpaid",
+    });
+    show("S9 · second expiry", second);
+
+    // Ignored as late, and — the property that matters — stock is still 5.
+    expect(second.outcome).toBe("ignored");
+    expect(yield* variantStock(edgeUrl, productId, variantId)).toBe(5);
+  }),
+  { timeout: TEST_TIMEOUT },
+);
+
+test(
+  "S10 · a PARTIAL refund records the money without killing the order",
+  Effect.gen(function* () {
+    const { edgeUrl, catalogUrl } = yield* stack;
+
+    const slug = `partial-${RUN}-${(counter += 1)}`;
+    const { productId, variantId } = yield* withClient(edgeUrl, (client) =>
+      Effect.gen(function* () {
+        const created = yield* client.createProduct({
+          commandId: cmd("create"),
+          slug,
+          title: `Partial ${slug}`,
+          priceCents: 2500,
+        });
+        yield* client.ingestProductMedia({
+          commandId: cmd("media"),
+          productId: created.productId,
+          bytesBase64: PIXEL_PNG,
+          contentType: "image/png",
+          alt: "cover",
+          role: "cover",
+        });
+        const variant = yield* client.putVariant({
+          commandId: cmd("variant"),
+          productId: created.productId,
+          size: "M",
+          sku: `${slug}-M`,
+          stock: 4,
+        });
+        yield* client.publishProduct({
+          commandId: cmd("publish"),
+          productId: created.productId,
+          expectedRevision: 1,
+          version: "1.0.0",
+        });
+        return { productId: created.productId, variantId: variant.variantId };
+      }),
+    );
+
+    const placed = yield* withShopper(catalogUrl, (client) =>
+      client.placeOrder({
+        commandId: cmd("buy"),
+        email: `partial-${RUN}@spike.local`,
+        destination: "CA",
+        items: [{ variantId, quantity: 2 }],
+      }),
+    );
+
+    const intent = `pi_partial_${RUN}_${counter}`;
+    yield* settle(edgeUrl, {
+      id: `evt-paid-p-${RUN}`,
+      type: "checkout.session.completed",
+      sessionId: placed.sessionId,
+      paymentStatus: "paid",
+      paymentIntentId: intent,
+      amounts: {
+        subtotalCents: 5000,
+        shippingCents: 1200,
+        taxCents: 806,
+        totalCents: 7006,
+        currency: "cad",
+      },
+    });
+    expect(yield* variantStock(edgeUrl, productId, variantId)).toBe(2);
+
+    /**
+     * A GOODWILL REFUND — 1000 of 7006. Stripe emits `charge.refunded` for this
+     * exactly as it does for a full one; only the amounts differ. Read as total,
+     * it would cancel an order the buyer is still owed and re-list two garments
+     * they are keeping — and `cancelled` has no outgoing transition, so the
+     * order could never be shipped afterwards.
+     */
+    const partial = yield* settle(edgeUrl, {
+      id: `evt-partial-${RUN}`,
+      type: "charge.refunded",
+      sessionId: null,
+      paymentIntentId: intent,
+      refund: { amountRefundedCents: 1000, chargeAmountCents: 7006, fullyRefunded: false },
+    });
+    show("S10 · partial refund", partial);
+    expect(partial.outcome).toBe("applied");
+
+    const after = yield* withClient(edgeUrl, (client) =>
+      client.getOrder({ orderNumber: placed.orderNumber }),
+    );
+    // Still alive, still shippable, and the money is on the record.
+    expect(after.status).toBe("paid");
+    expect(after.paymentStatus).toBe("partially_refunded");
+    expect(after.refundedCents).toBe(1000);
+    expect(after.totalCents).toBe(7006);
+    // The customer keeps the goods, so the goods do not come back.
+    expect(yield* variantStock(edgeUrl, productId, variantId)).toBe(2);
+
+    /**
+     * A SECOND goodwill refund. `amount_refunded` is CUMULATIVE on the charge,
+     * so the absolute write reports 1800 rather than compounding to 2600 — and
+     * still nothing is restored.
+     */
+    yield* settle(edgeUrl, {
+      id: `evt-partial-2-${RUN}`,
+      type: "charge.refunded",
+      sessionId: null,
+      paymentIntentId: intent,
+      refund: { amountRefundedCents: 1800, chargeAmountCents: 7006, fullyRefunded: false },
+    });
+    const twice = yield* withClient(edgeUrl, (client) =>
+      client.getOrder({ orderNumber: placed.orderNumber }),
+    );
+    expect(twice.refundedCents).toBe(1800);
+    expect(twice.status).toBe("paid");
+    expect(yield* variantStock(edgeUrl, productId, variantId)).toBe(2);
   }),
   { timeout: TEST_TIMEOUT },
 );

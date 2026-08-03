@@ -97,6 +97,7 @@ const orderWriteStatements = (
   input: PlaceOrderInput,
   lines: readonly OrderLine[],
   subtotalCents: number,
+  currency: string,
   now: number,
   itemIds: readonly string[],
 ): readonly DbStatement[] => [
@@ -108,6 +109,7 @@ const orderWriteStatements = (
     status: "pending",
     paymentStatus: "unpaid",
     subtotalCents,
+    currency,
     /**
      * Shipping, tax and total are deliberately LEFT AT ZERO here. They are not
      * yet knowable — the buyer has not chosen a rate or entered an address — and
@@ -155,6 +157,13 @@ export const placeOrder = Effect.fn("Checkout.placeOrder")(function* (
   const payments = yield* Payments;
   const db = database.db;
 
+  /**
+   * The currency the order is QUOTED in, recorded on the row rather than left to
+   * the column default. The default is right only by coincidence today, and the
+   * column exists precisely so the constant can stop being constant.
+   */
+  const currency = payments.currency;
+
   const { variants, products } = yield* loadPricingInputs(
     db,
     input.items.map((item) => item.variantId),
@@ -197,6 +206,7 @@ export const placeOrder = Effect.fn("Checkout.placeOrder")(function* (
         input,
         totals.lines,
         totals.subtotalCents,
+        currency,
         now,
         itemIds,
       ),

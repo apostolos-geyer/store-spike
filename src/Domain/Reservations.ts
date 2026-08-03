@@ -331,6 +331,73 @@ export interface RestorableLine {
   readonly preorder: boolean;
 }
 
+/**
+ * Release an order's stock AT MOST ONCE, whoever asks and however often.
+ *
+ * THE PROBLEM THIS SOLVES is not a race — it is the sweep's own designed path.
+ * `Reconcile.sweep` calls `payments.expire(session)` and then releases; expiring
+ * the session makes the provider emit `checkout.session.expired`, which arrives
+ * with a FRESH event id, so the `payment_event` replay key does not catch it and
+ * the failing branch releases the same units a second time. A refund on an
+ * already-released order is a third caller. None of them can see each other.
+ *
+ * So the fact "this order has been released" is written down. Every restore is
+ * guarded on the marker still being null via a correlated subquery, and the
+ * marker is claimed in the SAME batch — which is one transaction executed in
+ * order, so the guards see the pre-claim null and the claim shuts the door on
+ * every future caller. A second release is a batch of zero-row updates.
+ *
+ * This is the same shape as `guardStatement`: push the predicate into SQL rather
+ * than deciding in JS from a read that is stale by the time it is used.
+ */
+export const releaseStatements = (
+  db: ClassicDb,
+  orderId: string,
+  lines: readonly RestorableLine[],
+  now: number,
+): readonly DbStatement[] => {
+  const unreleased = sql`(select ${customerOrder.stockReleasedAt} from ${customerOrder} where ${customerOrder.id} = ${orderId}) is null`;
+
+  return [
+    ...lines.map(
+      (line) =>
+        db
+          .update(productVariant)
+          .set({ stock: sql`${productVariant.stock} + ${line.quantity}` })
+          .where(
+            sql`${productVariant.id} = ${line.variantId} and ${unreleased}`,
+          ) as unknown as DbStatement,
+    ),
+    ...runClaims(
+      lines.map((line) => ({
+        variantId: line.variantId,
+        productId: line.productId,
+        title: "",
+        size: "",
+        unitPriceCents: 0,
+        quantity: line.quantity,
+        preorder: line.preorder,
+        expectedShipAt: null,
+      })),
+    ).map(
+      (claim) =>
+        db
+          .update(product)
+          .set({
+            preorderClaimed: sql`max(0, ${product.preorderClaimed} - ${claim.quantity})`,
+          })
+          .where(sql`${product.id} = ${claim.productId} and ${unreleased}`) as unknown as DbStatement,
+    ),
+    // Claimed LAST, so every guard above still saw null.
+    db
+      .update(customerOrder)
+      .set({ stockReleasedAt: now })
+      .where(
+        sql`${customerOrder.id} = ${orderId} and ${customerOrder.stockReleasedAt} is null`,
+      ) as unknown as DbStatement,
+  ];
+};
+
 export const restoreStatements = (
   db: ClassicDb,
   lines: readonly RestorableLine[],

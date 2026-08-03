@@ -51,6 +51,7 @@ export const canTransition = (from: OrderStatus, to: OrderStatus): boolean =>
   TRANSITIONS[from].includes(to);
 
 const toAddress = (row: {
+  shipCountry: string;
   shipName: string | null;
   shipLine1: string | null;
   shipLine2: string | null;
@@ -69,7 +70,13 @@ const toAddress = (row: {
         city: row.shipCity,
         region: row.shipRegion,
         postal: row.shipPostal,
-        country: "CA",
+        /**
+         * READ, not asserted. The store sells to Canada and the US, checkout
+         * pins the session to one of them, and settlement copies back the
+         * country the buyer actually entered — so stamping "CA" here printed a
+         * Canadian label on every Texan parcel.
+         */
+        country: row.shipCountry === "US" ? "US" : "CA",
         ...(row.shipPhone ? { phone: row.shipPhone } : {}),
       }
     : null;
@@ -103,6 +110,7 @@ export const loadOrder = Effect.fn("Orders.loadOrder")(function* (
     taxCents: row.taxCents,
     totalCents: row.totalCents,
     currency: row.currency,
+    refundedCents: row.refundedCents,
     shipCountry: row.shipCountry,
     shipping: toAddress(row),
     carrier: row.carrier,

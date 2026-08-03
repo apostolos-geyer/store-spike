@@ -145,15 +145,16 @@ bunAfterAll(() => {
  * a re-fired event from the dashboard needs, which is why it exists in the
  * settlement path rather than as a test affordance.
  */
-const trigger = (event: string, orderId: string) =>
+const trigger = (event: string, orderId: string | null) =>
   Effect.promise(async () => {
     const child = Bun.spawn(
       [
         "stripe",
         "trigger",
         event,
-        "--add",
-        `checkout_session:metadata.storeOrderId=${orderId}`,
+        // Omitted when the caller only wants the CHARGE the trigger produces and
+        // does not want the resulting event to touch any of our orders.
+        ...(orderId ? ["--add", `checkout_session:metadata.storeOrderId=${orderId}`] : []),
       ],
       { stdout: "pipe", stderr: "pipe" },
     );
@@ -676,27 +677,24 @@ test.skipIf(!STRIPE_READY)(
     );
     expect(yield* stockOf(edgeUrl, productId, variantId)).toBe(4);
 
-    const order = yield* withOperator(edgeUrl, (client) =>
-      client.getOrder({ orderNumber: placed.orderNumber }),
-    );
-
     /**
-     * A REAL CHARGE. The trigger confirms a test-mode payment, so what comes
-     * back is a Stripe Charge with a live PaymentIntent behind it — refundable
-     * through the API exactly like a customer's.
+     * A REAL CHARGE, minted WITHOUT naming our order.
+     *
+     * The trigger confirms a test-mode payment, so what comes back is a Stripe
+     * Charge with a live PaymentIntent behind it — refundable through the API
+     * exactly like a customer's. No metadata is attached, so the resulting
+     * `checkout.session.completed` describes only Stripe's own fixture session
+     * and leaves this order alone.
      */
-    yield* trigger("checkout.session.completed", order.orderId);
-    yield* untilOrder(edgeUrl, placed.orderNumber, (o) => o.status === "paid");
+    yield* trigger("checkout.session.completed", null);
     const charge = yield* latestCharge;
     show("E6 · charge", { id: charge.id, intent: charge.payment_intent });
 
     /**
-     * The order must CARRY that payment intent for the refund to find it. A
-     * charge event names no session and has no metadata, so this column is the
-     * only join — and the triggered session is foreign to this order, so
-     * settlement refused to record it. Recording it is exactly what a live
-     * webhook endpoint would have done from the order's own session, and doing
-     * it here keeps the refund half honest without pretending the paid half was.
+     * Settle the order from ITS OWN session, carrying that real payment intent —
+     * which is precisely what a live webhook endpoint delivers, and the only way
+     * the order can record the intent a refund will later name. A charge event
+     * carries no session and no metadata, so that column is the sole join.
      */
     yield* withOperator(edgeUrl, (client) =>
       client.replayEvent({
@@ -718,6 +716,7 @@ test.skipIf(!STRIPE_READY)(
             currency: "cad",
           },
           paymentIntentId: charge.payment_intent,
+          refund: null,
         },
         attempt: 1,
       }),
@@ -726,6 +725,7 @@ test.skipIf(!STRIPE_READY)(
     const linked = yield* withOperator(edgeUrl, (client) =>
       client.getOrder({ orderNumber: placed.orderNumber }),
     );
+    expect(linked.status).toBe("paid");
     expect(linked.totalCents).toBe(7006);
     expect(linked.taxCents).toBe(806);
 

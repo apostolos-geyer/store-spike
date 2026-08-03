@@ -153,7 +153,7 @@ export const mediaHref = (mediaId: string): string => `/media/${mediaId}`;
 
 export type OrderStatus = "pending" | "paid" | "shipped" | "delivered" | "cancelled";
 
-/** Canada only: `country` is a compile-time literal, not a column read. */
+/** Canada and the US. `country` is READ from the row, never assumed. */
 export interface ShippingAddress {
   name: string;
   line1: string;
@@ -161,7 +161,7 @@ export interface ShippingAddress {
   city: string;
   region: string;
   postal: string;
-  country: "CA";
+  country: "CA" | "US";
   phone?: string;
 }
 
@@ -201,6 +201,8 @@ export interface OrderDetailDTO {
   taxCents: number;
   totalCents: number;
   currency: string;
+  /** Cumulative minor units returned to the buyer. */
+  refundedCents: number;
   /** Where it ships. Chosen at checkout, confirmed by the settled address. */
   shipCountry: string;
   shipping: ShippingAddress | null;

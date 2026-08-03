@@ -349,6 +349,30 @@ export const customerOrder = sqliteTable(
      */
     paymentIntentId: text("payment_intent_id"),
     /**
+     * WHEN THIS ORDER'S STOCK WENT BACK, and the reason it is a column rather
+     * than an inference.
+     *
+     * Three separate paths release an order — the reconcile sweep, a failing
+     * checkout event, and a refund — and they do not coordinate. Worse, the
+     * sweep CAUSES one of the others: it calls `expire` on the session, which
+     * makes Stripe emit `checkout.session.expired`, which arrives with a fresh
+     * event id and so is not a duplicate. Without a durable marker both paths
+     * restore the same units and the store invents inventory it cannot ship.
+     *
+     * Set inside the same batch as the restore, and every restore is guarded on
+     * it being null, so releasing twice is unrepresentable rather than merely
+     * unlikely.
+     */
+    stockReleasedAt: integer("stock_released_at"),
+    /**
+     * Cumulative minor units refunded, copied from the provider.
+     *
+     * Absolute rather than incremented, because the provider reports a running
+     * total on the charge — so re-applying the same event writes the same number
+     * and a redelivery cannot inflate it.
+     */
+    refundedCents: integer("refunded_cents").notNull().default(0),
+    /**
      * Mirrors the payment session's own expiry so the reconcile sweep can find
      * stale-attached reservations without an unbounded provider scan. Written
      * in the same commit that attaches the session — an order missing this copy

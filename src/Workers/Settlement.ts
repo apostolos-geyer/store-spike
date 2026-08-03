@@ -21,6 +21,7 @@ import { Stack } from "alchemy/Stack";
 
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
@@ -44,11 +45,32 @@ export const EventsQueue = Cloudflare.Queues.Queue(
 /** The maintenance trigger. Quarter-hourly is well inside the session TTL. */
 const SWEEP_CRON = "*/15 * * * *";
 
-/** What travels on the queue: the compacted event plus its delivery count. */
+/**
+ * What travels on the queue: the compacted event, and nothing else.
+ *
+ * There is deliberately no `attempt` in the body. Cloudflare redelivers the
+ * IDENTICAL body, so a counter carried inside it is frozen at whatever the
+ * producer wrote — it can never increment, which made `attempt < MAX_ATTEMPTS`
+ * permanently true and the `dead` evidence row unreachable on the deployed path.
+ * The real counter is `message.attempts`, maintained by the queue itself.
+ */
 interface QueuedEvent {
   readonly event: ProviderEvent;
-  readonly attempt: number;
 }
+
+/**
+ * Raised so the batch FAILS, which is the only way to make the queue redeliver.
+ *
+ * `settle` cannot fail — its error channel is `never` — so a `retryable` outcome
+ * used to return successfully, the handler acked, and the event was gone with no
+ * `payment_event` row to show it ever arrived. An event whose order has not been
+ * written yet is exactly the case retrying exists for, so it has to become a
+ * failure here.
+ */
+class SettlementNeedsRetry extends Schema.TaggedErrorClass<SettlementNeedsRetry>()(
+  "SettlementNeedsRetry",
+  { eventId: Schema.String, attempts: Schema.Number },
+) {}
 
 
 
@@ -95,6 +117,15 @@ export default class SettlementWorker extends Cloudflare.Worker<SettlementWorker
      * `retryable` is the ONLY outcome that retries. applied / duplicate /
      * ignored / dead all ack, which is what stops a redelivery settling an
      * order twice and what makes the absence of a DLQ safe.
+     *
+     * MAKING THAT TRUE REQUIRES FAILING. The event source acks on success and
+     * calls `msg.retry()` only on error, and `settle` cannot fail — so simply
+     * running it and discarding the outcome acked everything, including the one
+     * outcome that was supposed to come back.
+     *
+     * Failing the batch redelivers ALL of it, which is safe rather than merely
+     * tolerable: anything already applied wrote a `payment_event` row keyed on
+     * the provider's event id, so it returns as `duplicate` and touches nothing.
      */
     yield* Cloudflare.Queues.consumeQueueMessages<QueuedEvent>(
       queue,
@@ -104,8 +135,18 @@ export default class SettlementWorker extends Cloudflare.Worker<SettlementWorker
           Effect.forEach(
             batch,
             (message) =>
-              settle(message.body.event, message.body.attempt, livemode).pipe(
+              settle(message.body.event, message.attempts, livemode).pipe(
                 Effect.provide(layer),
+                Effect.flatMap((settled) =>
+                  settled.outcome === "retryable"
+                    ? Effect.fail(
+                        new SettlementNeedsRetry({
+                          eventId: message.body.event.id,
+                          attempts: message.attempts,
+                        }),
+                      )
+                    : Effect.void,
+                ),
               ),
             { concurrency: 1, discard: true },
           ),
@@ -149,7 +190,7 @@ export default class SettlementWorker extends Cloudflare.Worker<SettlementWorker
         return yield* payments.parseEvent(body, signature).pipe(
           Effect.flatMap((event) =>
             Effect.andThen(
-              send.send({ event, attempt: 1 }),
+              send.send({ event }),
               HttpServerResponse.json({ received: true }),
             ),
           ),

@@ -319,6 +319,17 @@ export const layer = Layer.effect(
           shipCountry: null,
           amounts: null,
           paymentIntentId: intent,
+          /**
+           * `charge.refunded` fires for PARTIAL refunds too — the charge reports
+           * `refunded: false` with a non-zero `amount_refunded`. Reading only the
+           * event type is what makes a $10 goodwill refund look like a
+           * cancellation.
+           */
+          refund: {
+            amountRefundedCents: charge.amount_refunded ?? 0,
+            chargeAmountCents: charge.amount ?? 0,
+            fullyRefunded: charge.refunded === true,
+          },
         } satisfies ProviderEvent;
       }
 
@@ -351,9 +362,10 @@ export const layer = Layer.effect(
             }
           : null,
         paymentIntentId: paymentIntentOf(object),
+        refund: null,
       } satisfies ProviderEvent;
     });
 
-    return Payments.of({ createSession, retrieve, expire, parseEvent });
+    return Payments.of({ currency: config.currency, createSession, retrieve, expire, parseEvent });
   }),
 );
