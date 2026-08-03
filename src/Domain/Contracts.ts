@@ -16,22 +16,12 @@
 
 // ── Result envelope ──────────────────────────────────────────────────────────
 
-export type DomainResult<T, E extends string> =
-  | { ok: true; value: T }
-  | { ok: false; error: E; message?: string };
-
-export const ok = <T>(value: T): { ok: true; value: T } => ({ ok: true, value });
-
 /**
- * `err(code)` with no message OMITS the `message` key rather than setting it to
- * `undefined`. The whole result is JSON-serialised into the audit row and
- * replayed verbatim, so key presence has to be byte-stable across a replay.
+ * The envelope itself lives in `core/` — it is pure, and every rule about it
+ * (notably `err`'s byte-stable key omission) is provable without a database.
+ * Re-exported here so this file stays the one vocabulary import for callers.
  */
-export const err = <E extends string>(
-  error: E,
-  message?: string,
-): { ok: false; error: E; message?: string } =>
-  message === undefined ? { ok: false, error } : { ok: false, error, message };
+export { deriveIdempotencyKey, err, ok, type DomainResult } from "../core/result.ts";
 
 // ── Call envelope ────────────────────────────────────────────────────────────
 
@@ -59,57 +49,15 @@ export interface OperatorCommandInput<T> {
   input: T;
 }
 
-/**
- * Namespace a browser command into a domain idempotency key. Retrying the same
- * UI command is stable without letting the browser choose the namespace — a
- * client that picked its own could suppress another actor's writes by colliding.
- */
-export const deriveIdempotencyKey = (actorSub: string, action: string, commandId: string): string =>
-  `${actorSub}:${action}:${commandId}`;
-
 // ── Versioning ───────────────────────────────────────────────────────────────
 
-/**
- * Canonical core SemVer: no `v` prefix, no leading zeros, no pre-release or
- * build metadata. A release publishes under an operator-supplied version of
- * exactly this shape.
- */
-export const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
-
-export const isValidVersion = (value: string): boolean => SEMVER_PATTERN.test(value);
-
-/**
- * The next version for a product, derived from what it has already published.
- *
- * A VERSION IS A LABEL, NOT AN INPUT. It exists so a release has something
- * human to point at — "v3 of this shirt" — and that is the whole job. Requiring
- * the operator to invent one made a decorative idea load-bearing on the write
- * path: fixing a typo meant choosing a number, and reusing one refused the
- * publish outright.
- *
- * So it is derived by default. Bumping the MINOR keeps the shape recognisably
- * semver without pretending these numbers carry compatibility meaning — they
- * describe a garment, not an API.
- */
-export const nextVersion = (published: readonly string[]): string => {
-  let highest = 0;
-  for (const version of published) {
-    const minor = Number(version.split(".")[1] ?? 0);
-    if (Number.isFinite(minor) && minor > highest) highest = minor;
-  }
-  return published.length === 0 ? "1.0.0" : `1.${highest + 1}.0`;
-};
-
-/** Compare two core SemVers. Returns <0, 0, or >0. */
-export const compareVersions = (a: string, b: string): number => {
-  const left = a.split(".").map(Number);
-  const right = b.split(".").map(Number);
-  for (let i = 0; i < 3; i += 1) {
-    const diff = (left[i] ?? 0) - (right[i] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
-};
+/** Pure label arithmetic — see `core/versions.ts` for why it lives there. */
+export {
+  compareVersions,
+  isValidVersion,
+  nextVersion,
+  SEMVER_PATTERN,
+} from "../core/versions.ts";
 
 // ── Product DTOs ─────────────────────────────────────────────────────────────
 
