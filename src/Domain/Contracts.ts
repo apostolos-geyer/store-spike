@@ -13,6 +13,7 @@
  *  - No method ever throws for a domain condition. Success and typed domain
  *    errors are both {@link DomainResult} values.
  */
+import type * as Rpc from "./Rpc.ts";
 
 // ── Result envelope ──────────────────────────────────────────────────────────
 
@@ -61,53 +62,24 @@ export {
 
 // ── Product DTOs ─────────────────────────────────────────────────────────────
 
-export type ProductStatus = "draft" | "active" | "unavailable" | "archived";
-
 /**
- * The OPERATOR view of a product: title, description, and price come from the
- * mutable draft, while `status` and `activeVersion` come from the identity row
- * and its active release. `updatedAt` is epoch milliseconds.
+ * DERIVED FROM THE SCHEMA, not restated beside it.
+ *
+ * Every one of these was previously a hand-written twin of a `Schema` in
+ * `Rpc.ts`, kept in step by hand across twelve types with no compile-time link
+ * between them. Two had already drifted — `OrderDetailDTO.items` and
+ * `DeletionImpact.warnings` declared mutable arrays where the schema yields
+ * readonly ones — and drift surfaced as a runtime encode failure on a live
+ * request rather than a build error.
+ *
+ * `import type` keeps this erased: no value crosses from the RPC boundary into
+ * the domain vocabulary, only its shape.
  */
-export interface ProductDraftDTO {
-  productId: string;
-  slug: string;
-  revision: number;
-  title: string;
-  descriptionMarkdown: string | null;
-  priceCents: number;
-  status: ProductStatus;
-  activeVersion: string | null;
-  updatedAt: number;
-}
-
-/** `available` is derived as `stock > 0`; it is never stored. */
-export interface ProductVariantDTO {
-  id: string;
-  size: string;
-  sku: string;
-  stock: number;
-  mode: "stock" | "preorder";
-  expectedShipAt: number | null;
-  available: boolean;
-}
-
-export type ProductMediaRole = "cover" | "gallery" | "evidence";
-
-/**
- * `href` is the storage-neutral public path served by the Catalog worker. The
- * R2 object key never appears in a DTO, a URL, or an RPC type.
- */
-export interface ProductMediaDTO {
-  id: string;
-  productId: string;
-  alt: string;
-  role: ProductMediaRole;
-  position: number;
-  href: string;
-  contentType: string;
-  size: number;
-  sha256: string;
-}
+export type ProductStatus = typeof Rpc.ProductStatus.Type;
+export type ProductDraftDTO = typeof Rpc.ProductDraft.Type;
+export type ProductVariantDTO = typeof Rpc.ProductVariant.Type;
+export type ProductMediaRole = typeof Rpc.MediaRole.Type;
+export type ProductMediaDTO = typeof Rpc.ProductMedia.Type;
 
 export type MediaMutationError =
   | "not_found"
@@ -121,92 +93,10 @@ export const mediaHref = (mediaId: string): string => `/media/${mediaId}`;
 
 // ── Order DTOs ───────────────────────────────────────────────────────────────
 
-export type OrderStatus = "pending" | "paid" | "shipped" | "delivered" | "cancelled";
-
-/** Canada and the US. `country` is READ from the row, never assumed. */
-export interface ShippingAddress {
-  name: string;
-  line1: string;
-  line2?: string;
-  city: string;
-  region: string;
-  postal: string;
-  country: "CA" | "US";
-  phone?: string;
-}
-
-/**
- * Orders are addressed by `orderNumber`; the internal row id never appears here.
- * `shipping` is all-or-nothing, mirroring the `ship_address_atomic` CHECK. Item
- * lines are the frozen purchase-time snapshot, never the live catalog.
- */
-export interface OrderDetailDTO {
-  /**
-   * The internal id, and the OPERATOR view carries it on purpose.
-   *
-   * It is what checkout writes into the payment session's metadata, so it is the
-   * only handle that joins an order to a provider dashboard. Without it, "this
-   * Stripe session says storeOrderId=01J…" is unanswerable from the console. The
-   * customer projection in `Storefront.rpc.ts` deliberately omits it.
-   */
-  orderId: string;
-  orderNumber: string;
-  /** The payment session holding this order, once checkout has attached one. */
-  sessionId: string | null;
-  customerId: string;
-  /** The address the order was placed with — the customer's lookup key. */
-  email: string;
-  /** What the buyer gave the payment provider, when it differed. */
-  receiptEmail: string | null;
-  status: OrderStatus;
-  paymentStatus: string;
-  /** Ours: line items only. The one figure known before payment. */
-  subtotalCents: number;
-  /**
-   * The provider's, and ZERO until the order is paid — shipping is a rate the
-   * buyer picks and tax is assessed on the address they enter, so neither
-   * exists at checkout. Read `subtotalCents` for an unpaid order.
-   */
-  shippingCents: number;
-  taxCents: number;
-  totalCents: number;
-  currency: string;
-  /** Cumulative minor units returned to the buyer. */
-  refundedCents: number;
-  /** Where it ships. Chosen at checkout, confirmed by the settled address. */
-  shipCountry: string;
-  shipping: ShippingAddress | null;
-  carrier: string | null;
-  trackingNumber: string | null;
-  fulfillmentNote: string | null;
-  shippedAt: number | null;
-  deliveredAt: number | null;
-  createdAt: number;
-  items: Array<{
-    productId: string;
-    variantId: string;
-    title: string;
-    size: string;
-    unitPriceCents: number;
-    quantity: number;
-    /** Snapshot: this line was sold against a run, not a shelf. */
-    preorder: boolean;
-    expectedShipAt: number | null;
-  }>;
-}
-
-export interface OrderListResult {
-  orders: Array<{
-    orderNumber: string;
-    email: string;
-    shipName: string | null;
-    totalCents: number;
-    status: OrderStatus;
-    paymentStatus: string;
-    createdAt: number;
-  }>;
-  nextCursor: string | null;
-}
+export type OrderStatus = typeof Rpc.OrderStatus.Type;
+export type ShippingAddress = typeof Rpc.ShippingAddress.Type;
+export type OrderDetailDTO = typeof Rpc.OrderDetail.Type;
+export type OrderListResult = typeof Rpc.OrderPage.Type;
 
 export type OrderMutationError =
   | "not_found"
@@ -216,28 +106,8 @@ export type OrderMutationError =
 
 // ── Deletion protocol ────────────────────────────────────────────────────────
 
-/**
- * The blast radius of a proposed delete, derived read-only. `deleteCounts` is
- * what goes; `retainedCounts` is what stays and must be shown anyway — the
- * retained ORDER counts are folded into the impact hash by design, so a new
- * order arriving between plan and confirm is drift and aborts the delete.
- */
-export interface DeletionImpact {
-  targetType: "product" | "product_release" | "product_variant" | "media";
-  targetId: string;
-  label: string;
-  activeReleaseAffected: boolean;
-  deleteCounts: Record<string, number>;
-  retainedCounts: Record<string, number>;
-  warnings: string[];
-}
-
-export interface DeletionPlan {
-  impact: DeletionImpact;
-  /** The plaintext token, returned once. Only its SHA-256 hash is persisted. */
-  confirmationToken: string;
-  expiresAt: number;
-}
+export type DeletionImpact = typeof Rpc.DeletionImpact.Type;
+export type DeletionPlan = typeof Rpc.DeletionPlan.Type;
 
 /**
  * The confirm call's ONLY input. The target is recovered from the intent row, so
@@ -267,19 +137,8 @@ export interface ListProductsInput {
   cursor?: string;
 }
 
-export interface ProductListPage {
-  products: ProductDraftDTO[];
-  nextCursor: string | null;
-}
-
-export interface ProductDetail {
-  draft: ProductDraftDTO;
-  /** The manufacturing run, if this product is sold as a pre-order. */
-  preorder: PreorderRunDTO;
-  releases: Array<{ id: string; version: string; publishedAt: number }>;
-  variants: ProductVariantDTO[];
-  media: ProductMediaDTO[];
-}
+export type ProductListPage = typeof Rpc.ProductPage.Type;
+export type ProductDetail = typeof Rpc.ProductDetail.Type;
 
 export interface CreateProductInput {
   slug: string;
@@ -322,18 +181,7 @@ export interface PutVariantInput {
   expectedShipAt?: number | null;
 }
 
-/** A product's manufacturing run: the cap, what is sold, what is left. */
-export interface PreorderRunDTO {
-  cap: number | null;
-  claimed: number;
-  remaining: number | null;
-}
-
-export interface SetPreorderCapInput {
-  productId: string;
-  /** `null` closes the run — every claim is refused until a cap is set again. */
-  cap: number | null;
-}
+export type PreorderRunDTO = typeof Rpc.PreorderRun.Type;
 
 export interface AdjustStockInput {
   variantId: string;
