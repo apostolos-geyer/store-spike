@@ -10,18 +10,44 @@ Pinned to `platform/`'s versions — effect `4.0.0-beta.101`, drizzle-orm
 ```sh
 bun install
 bun run db:generate                          # regenerate migrations after a schema edit
+bun run test:unit                            # no deploy, no network — ~80ms
 ALCHEMY_PROFILE=dev bun test                 # deploy → assert → destroy
 NO_DESTROY=1 ALCHEMY_PROFILE=dev bun test    # keep the stack up between runs
 ```
 
-**Status: 30/30 integration tests pass against a live deployment — 13 operator,
-9 settlement, 8 end-to-end through Stripe itself. `tsc --noEmit` clean, verified
-from a destroyed stack on a single cold run.**
+**Status: 137 unit and contract tests pass in ~80ms; 30 integration tests pass
+against a live deployment — 13 operator, 9 settlement, 8 end-to-end through
+Stripe itself. `tsc --noEmit` clean under `noUncheckedIndexedAccess`,
+`noUnusedLocals` and `noUnusedParameters`.**
+
+⚠️ **The integration suite has not been re-run since the correctness fixes
+below.** The unit and contract tiers cover the decisions; reservation atomicity,
+the audit protocol and settlement against real Stripe are integration-only and
+need a deploy to confirm. Run `ALCHEMY_PROFILE=dev bun test` before shipping.
 
 An adversarial review pass raised 22 findings; 19 survived independent
-refutation. Sixteen are fixed, **three remain open** — read
-[REVIEW.md](./REVIEW.md) before shipping this. Five of the six review lenses hit
-their finding cap, so that register is a floor, not a ceiling.
+refutation. **All are now closed**, along with the residue conceded inside two
+refutations and tracked nowhere — see [REVIEW.md](./REVIEW.md), which leads with
+the current state. Five of the six review lenses hit their finding cap, so that
+register is a floor, not a ceiling: independent reading afterwards found five
+more, including a silent tail-drop in `classifyGuards` and a control path
+decided by regex over a database driver's error text.
+
+## Testing
+
+Two tiers that need nothing, and two that need a deployment.
+
+| Tier | Where | Cost | What it proves |
+|---|---|---|---|
+| Unit | `test/unit/` | ~80ms | Pricing rules, guard classification, the late-event matrix, cursor codecs, version labels, actor attribution |
+| Contract | `test/unit/contracts.test.ts` | — | A value the domain produces survives encode/decode through the real `Schema`, and the schema refuses what it should |
+| Integration | `test/store.integ.test.ts`, `test/settlement.integ.test.ts` | ~6 min | Real D1 batches: reservation atomicity, guard compensation, the idempotency ledger |
+| End-to-end | `test/stripe.e2e.test.ts` | ~4 min | Money actually moves, against Stripe itself |
+
+The unit tier exists because until recently there wasn't one — every test
+required a live deploy and a 600-second hook timeout, which is a plausible
+reason `settle` reached 351 lines without being decomposed. Writing it found a
+real defect in `classifyGuards` within the first minute.
 
 Setup is `stripe login` and nothing else. The CLI's own test key and signing
 secret are read at deploy time, so no Stripe credential is pasted into a shell
@@ -53,13 +79,26 @@ Stripe dashboard and there are no rate IDs to keep in sync.
 
 ## Layout
 
+`core/` is the split the platform's boundary config forces: its `app-core` zone
+declares `allow: []` and forbids `fetch`, `caches.*`, `crypto.subtle.*` and
+`cloudflare:workers.*`. `Domain/` is pure in a weaker sense — it returns
+statements instead of committing, but it imports drizzle and the database
+handle — so it could not have become `core/` by renaming.
+
 ```
 alchemy.run.ts              ONE stack. Catalog + Edge get URLs; the rest are bindings.
 src/
-  Domain/                   PURE — no services, no tags, no I/O beyond a passed handle
+  core/                     ZERO IMPORTS — decisions, no I/O, no drizzle, no Effect
+    pricing.ts              cart rules; what a buyer is charged
+    guards.ts               did a conditional write actually take
+    settlement-policy.ts    event classes + the late-event matrix
+    paging.ts  money.ts     keyset cursors; minor units
+    versions.ts  result.ts  release labels; the result envelope + idempotency key
+    actors.ts               operator vs customer, by subject namespace
+  Domain/                   emits statements; never commits
     Rpc.ts                  the schema-validated trust boundary (23 procedures)
-    Contracts.ts            internal DTOs + the OperatorCall envelope
-    Schema.ts               12 tables: release model, orders, audit, deletion intents
+    Contracts.ts            DTOs DERIVED from Rpc schemas + the OperatorCall envelope
+    Schema.ts               11 tables: release model, orders, audit, deletion intents
     Catalog.ts              draft → release → active release
     Orders.ts               the order/fulfilment state machine
     Deletion.ts             two-phase plan/confirm cascade
@@ -69,7 +108,6 @@ src/
     Reconcile.ts            heal-before-release sweep
     Storefront.ts           active-release public reads
     Media.ts                ingest + serve
-    Money.ts  Paging.ts     minor units; keyset cursors
   Services/                 CAPABILITIES — Context.Service + static layer
     Database.ts  Ids.ts  Blobs.ts  Audit.ts  Payments.ts  PaymentsFake.ts
   Workers/

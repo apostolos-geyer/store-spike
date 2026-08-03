@@ -25,6 +25,54 @@ reviewer recommended:
 - `OPEN` — real, unaddressed. Read the failure scenario before shipping.
 - `REFUTED` — the skeptic found it wrong, unreachable, or already handled.
 
+### Current state
+
+**Nothing is open.** O2, O3 and O6 — the three that outlived the first pass —
+are closed, and so is the residue that was conceded inside two refutations and
+then tracked nowhere.
+
+The section headings below are ORIGINAL and are not re-sectioned as things move,
+so `## Open` still lists eight findings of which five were already annotated
+`— FIXED` in their own titles when this note was written. Read the table, not the
+headings.
+
+| | Finding | Now |
+|---|---|---|
+| O2 | `adjustStock` never inspected its guard | Fixed — `CoreOutcome.guards` |
+| O3 | Failure between checkout's two batches let the sweep invent stock | Fixed — release marker inverted |
+| O6 | `setPreorderCap` stale read aborted the audited batch | Fixed — predicate pushed into SQL |
+
+### Residue from refuted findings
+
+A refutation can be right about the claim it addresses and still concede
+something smaller in passing. Nothing tracked these, which is how a refuted
+bucket loses defects.
+
+| From | What actually survived | Now |
+|---|---|---|
+| R1 | `evidence` images are served publicly, resting on a premise written down nowhere | Confirmed intended — all three roles are display roles, and `Rpc.MediaRole` now says so |
+| R2 | Every guest checkout was recorded with `source: "operator"` and the buyer's email as `actor`, contradicting `Timeline`'s own definition | Fixed — `TimelineSource` gains `customer`, derived from the actor namespace |
+| R2 | The anonymous `placeOrder` email had no maximum length and is persisted twice per order | Fixed — bounded at 254 |
+| R3 | `totalCents` reads 0 in the operator list; the refutation rests on "no in-repo consumer", which expires when a console exists | Open as a DTO decision, not a defect — add `subtotalCents` to `OrderSummary` |
+
+### Raised outside this register
+
+Found by independent reading and static analysis rather than the workflow, and
+recorded here so the next reader does not re-derive them:
+
+- `classifyGuards` drove its loop off the RESULTS array, so a short batch
+  silently dropped the tail — lines landed in neither `succeeded` nor
+  `firstFailing`. **Fixed**, and it fails closed now.
+- Checkout decided a control path by regex over D1's error text. **Fixed** —
+  the claim is `ON CONFLICT DO NOTHING` and read as `meta.changes`.
+- Twelve DTOs were hand-copied twins of their schemas; two had already drifted.
+  **Fixed** — derived via `typeof Schema.Type`.
+- `nextVersion` hardcodes the major, so an operator-supplied `2.0.0` makes the
+  next derived version sort below it. **Open**, pinned by test, harmless while
+  versions are labels.
+- `sortBySize` documents "not lexicographically" but its fallback is exactly
+  that. **Open**, pinned by test.
+
 
 ## Fixed
 
