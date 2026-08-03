@@ -23,7 +23,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import type { DomainResult, OperatorCall } from "../Domain/Contracts.ts";
+import { err, type DomainResult, type OperatorCall } from "../Domain/Contracts.ts";
+import { firstLostGuard } from "../core/guards.ts";
 import { commandEvent } from "../Domain/Schema.ts";
 import { Database, query, type DbStatement } from "./Database.ts";
 import { Ids } from "./Ids.ts";
@@ -37,6 +38,26 @@ export interface EventFacts {
 }
 
 /**
+ * A statement whose WHERE clause is a PREDICATE, not just a row selector.
+ *
+ * A conditional UPDATE that matches nothing is a no-op, not an error — D1's
+ * batch does not abort on it — so a core that emits one and assumes it took is
+ * asserting something it never checked. Declaring the statement's index here
+ * makes {@link Audit.command} inspect `meta.changes` after the commit and turn
+ * a lost guard into the domain error the core would have returned had it known.
+ *
+ * The ledger row is REMOVED when a guard loses, so the call stays retryable —
+ * that is the same contract as a core that returns a failure up front: a
+ * recorded event always means a success worth replaying.
+ */
+export interface GuardedStatement<E extends string> {
+  /** Position in `statements`. */
+  readonly index: number;
+  readonly error: E;
+  readonly message?: string;
+}
+
+/**
  * What a domain core returns: either a committed outcome with its statements
  * and audit facts, or a typed domain failure that writes nothing.
  */
@@ -45,6 +66,11 @@ export type CoreOutcome<T, E extends string> =
       readonly statements: readonly DbStatement[];
       readonly response: { ok: true; value: T };
       readonly facts: EventFacts;
+      /**
+       * Statements that must each have changed exactly one row for `response`
+       * to be true. Omit when every statement is unconditional.
+       */
+      readonly guards?: readonly GuardedStatement<E>[];
       /**
        * Run AFTER the batch commits — the escape hatch for an effect D1 cannot
        * hold, which in practice means deleting R2 objects behind a media delete.
@@ -154,7 +180,7 @@ export class Audit extends Context.Service<
          * (idempotency_key, action) means a concurrent duplicate loses here
          * rather than mutating twice — the batch aborts on the constraint.
          */
-        yield* Effect.orDie(
+        const results = yield* Effect.orDie(
           database.run([
             ...outcome.statements,
             db.insert(commandEvent).values({
@@ -173,6 +199,31 @@ export class Audit extends Context.Service<
             }) as unknown as DbStatement,
           ]),
         );
+
+        /**
+         * DID THE CONDITIONAL WRITES ACTUALLY TAKE?
+         *
+         * A guard that matched nothing left the row untouched while the event
+         * row beside it committed — so without this the ledger records a
+         * success for a mutation that never happened, and a later replay serves
+         * that fiction back verbatim.
+         *
+         * The ledger row is deleted rather than rewritten, so the key stays
+         * unconsumed and the caller may retry. That preserves the contract
+         * stated at the top of this file: a recorded event always means a
+         * success.
+         */
+        const lost = firstLostGuard(outcome.guards, results);
+        if (lost) {
+          yield* Effect.orDie(
+            database.run([
+              db
+                .delete(commandEvent)
+                .where(eq(commandEvent.id, eventId)) as unknown as DbStatement,
+            ]),
+          );
+          return err(lost.error, lost.message) as DomainResult<T, E>;
+        }
 
         /**
          * The row is gone and the audit event is written; only bytes remain.

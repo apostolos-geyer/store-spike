@@ -9,7 +9,12 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { classifyGuards, guardWon, type GuardResult } from "../../src/core/guards.ts";
+import {
+  classifyGuards,
+  firstLostGuard,
+  guardWon,
+  type GuardResult,
+} from "../../src/core/guards.ts";
 import type { OrderLine, RunClaim } from "../../src/core/pricing.ts";
 
 const lineOf = (variantId: string, productId: string, preorder = false): OrderLine => ({
@@ -52,6 +57,49 @@ describe("guardWon", () => {
     expect(guardWon({})).toBe(false);
     expect(guardWon({ meta: {} })).toBe(false);
     expect(guardWon(undefined)).toBe(false);
+  });
+});
+
+/**
+ * `Audit.command` commits a core's statements alongside the ledger row and only
+ * then learns whether the conditional ones took. This is that check — the thing
+ * standing between "the guard matched nothing" and "the ledger recorded a
+ * success that never happened, and will replay it".
+ */
+describe("firstLostGuard", () => {
+  const guards = [
+    { index: 0, error: "negative_stock" },
+    { index: 2, error: "cap_below_claimed" },
+  ];
+
+  test("all guards taking means no failure", () => {
+    expect(firstLostGuard(guards, [won, lost, won])).toBeUndefined();
+  });
+
+  test("a guarded statement that matched nothing is reported", () => {
+    expect(firstLostGuard(guards, [won, won, lost])?.error).toBe("cap_below_claimed");
+  });
+
+  test("the FIRST loser wins, in declaration order", () => {
+    expect(firstLostGuard(guards, [lost, won, lost])?.error).toBe("negative_stock");
+  });
+
+  test("unguarded statements are not inspected", () => {
+    // Index 1 is a plain insert; its result is irrelevant either way.
+    expect(firstLostGuard([{ index: 0, error: "x" }], [won, lost])).toBeUndefined();
+  });
+
+  test("a core declaring no guards is unaffected", () => {
+    expect(firstLostGuard(undefined, [lost, lost])).toBeUndefined();
+    expect(firstLostGuard([], [lost])).toBeUndefined();
+  });
+
+  /**
+   * A mis-declared index must fail closed. Reading it as a pass would make the
+   * check silently evaporate — the exact failure the guard exists to prevent.
+   */
+  test("an out-of-range index reads as a loss", () => {
+    expect(firstLostGuard([{ index: 9, error: "boom" }], [won])?.error).toBe("boom");
   });
 });
 

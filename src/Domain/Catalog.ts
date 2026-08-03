@@ -663,13 +663,6 @@ export const putVariant = Effect.fn("Catalog.putVariant")(function* (
 });
 
 /**
- * Move stock by a signed delta.
- *
- * The read-then-check is advisory; the write is a GUARDED relative update, so a
- * concurrent adjustment cannot drive stock negative between the two. A guard
- * that matches nothing means the delta would have gone below zero.
- */
-/**
  * Open, resize or close a product's PRE-ORDER RUN.
  *
  * `null` closes it: the guard tests `preorder_cap IS NOT NULL`, so a closed run
@@ -716,8 +709,24 @@ export const setPreorderCap = Effect.fn("Catalog.setPreorderCap")(function* (
       db
         .update(product)
         .set({ preorderCap: input.cap, updatedAt: now })
-        .where(eq(product.id, input.productId)) as unknown as DbStatement,
+        .where(
+          /**
+           * THE SAME PREDICATE THE READ ABOVE ONLY ADVISED.
+           *
+           * `claimed` was read in a separate query, so a checkout landing in
+           * between could push `preorder_claimed` past the new cap. An
+           * unguarded UPDATE then violated `preorder_claimed_within_cap` — and
+           * a constraint violation is a statement ERROR, so it aborted the
+           * whole audited batch and surfaced as a 500 instead of the
+           * `cap_below_claimed` this function exists to return.
+           *
+           * Pushing the predicate into SQL turns that into a zero-row update,
+           * which `guards` below reads and reports properly.
+           */
+          sql`${product.id} = ${input.productId} and (${input.cap} is null or ${product.preorderClaimed} <= ${input.cap})`,
+        ) as unknown as DbStatement,
     ],
+    guards: [{ index: 0, error: "cap_below_claimed" as const }],
     response: ok({
       cap: input.cap,
       claimed: current.claimed,
@@ -731,6 +740,15 @@ export const setPreorderCap = Effect.fn("Catalog.setPreorderCap")(function* (
   };
 });
 
+/**
+ * Move stock by a signed delta.
+ *
+ * The read-then-check is ADVISORY; the write is a guarded relative update, so a
+ * concurrent adjustment cannot drive stock negative between the two. A guard
+ * that matches nothing means the delta would have gone below zero, and
+ * `guards` is what makes that a `negative_stock` refusal rather than a
+ * silently-recorded success.
+ */
 export const adjustStock = Effect.fn("Catalog.adjustStock")(function* (
   db: ClassicDb,
   input: AdjustStockInput,
@@ -762,6 +780,18 @@ export const adjustStock = Effect.fn("Catalog.adjustStock")(function* (
           ),
         ) as unknown as DbStatement,
     ],
+    /**
+     * THE READ ABOVE IS ADVISORY; THIS IS WHAT DECIDES.
+     *
+     * `next` is computed from a SELECT that is already stale by the time the
+     * batch runs, so a concurrent checkout can take the units this delta was
+     * counting on. The WHERE clause is what actually stops stock going negative
+     * — and a WHERE that matches nothing is a no-op, not an error, so without
+     * declaring it here the command reported success for a write that never
+     * happened AND recorded that fiction in the ledger for a later replay to
+     * serve back.
+     */
+    guards: [{ index: 0, error: "negative_stock" as const }],
     response: ok({ stock: next }),
     facts: {
       targetType: "variant",

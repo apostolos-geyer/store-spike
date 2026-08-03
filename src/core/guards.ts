@@ -40,6 +40,23 @@ export interface GuardResult {
 export const guardWon = (result: GuardResult | undefined): boolean =>
   (result?.meta?.changes ?? 0) === 1;
 
+/**
+ * The first declared guard that did not take, or `undefined` if all of them did.
+ *
+ * `Audit.command` uses this to decide whether the response a core computed is
+ * actually true. A core hands over statements and a response BEFORE the batch
+ * runs, so a conditional write that matched nothing would otherwise be recorded
+ * as a success — and replayed as one.
+ *
+ * An out-of-range index reads as a loss, not a pass: a core that mis-declares
+ * which statement is guarded should fail closed rather than have the check
+ * silently evaporate.
+ */
+export const firstLostGuard = <G extends { readonly index: number }>(
+  guards: readonly G[] | undefined,
+  results: readonly GuardResult[],
+): G | undefined => guards?.find((guard) => !guardWon(results[guard.index]));
+
 export interface GuardClassification {
   succeeded: OrderLine[];
   firstFailing: OrderLine | undefined;
