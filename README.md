@@ -15,7 +15,7 @@ ALCHEMY_PROFILE=dev bun test                 # deploy → assert → destroy
 NO_DESTROY=1 ALCHEMY_PROFILE=dev bun test    # keep the stack up between runs
 ```
 
-**Status: 137 unit and contract tests pass in ~80ms; 30/30 integration tests
+**Status: 147 unit and contract tests pass in ~80ms; 30/30 integration tests
 pass against a live deployment — 13 operator, 9 settlement, 8 end-to-end through
 Stripe itself, all green after the correctness fixes below. `tsc --noEmit` clean
 under `noUncheckedIndexedAccess`, `noUnusedLocals` and `noUnusedParameters`.**
@@ -34,7 +34,7 @@ Two tiers that need nothing, and two that need a deployment.
 
 | Tier | Where | Cost | What it proves |
 |---|---|---|---|
-| Unit | `test/unit/` | ~80ms | Pricing rules, guard classification, the late-event matrix, cursor codecs, version labels, actor attribution |
+| Unit | `test/unit/` | ~80ms | Pricing rules, guard classification, the late-event matrix, cursor codecs, version labels, actor attribution, ULID monotonicity |
 | Contract | `test/unit/contracts.test.ts` | — | A value the domain produces survives encode/decode through the real `Schema`, and the schema refuses what it should |
 | Integration | `test/store.integ.test.ts`, `test/settlement.integ.test.ts` | ~6 min | Real D1 batches: reservation atomicity, guard compensation, the idempotency ledger |
 | End-to-end | `test/stripe.e2e.test.ts` | ~4 min | Money actually moves, against Stripe itself |
